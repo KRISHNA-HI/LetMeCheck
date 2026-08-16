@@ -1,0 +1,6 @@
+{
+  "name": "LetMeCheck",
+  "description": "Free manga, manhwa, and manhua catalog, material guide, and personal reading tracker.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
