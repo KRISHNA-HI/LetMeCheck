@@ -1,116 +1,121 @@
-LetMeCheck
+# LetMeCheck
 
-A modern manga/manhwa tracking web app for discovering titles and managing a personal reading library.
+LetMeCheck is an entertainment discovery and personal tracking platform for discovering movies, TV series, anime, manga, manhwa, and other titles in one organized catalog.
 
-Features
+The app combines a structured content catalog with personal libraries, favorites, progress tracking, regional classification, and automated catalog ingestion.
 
-Browse and discover manga/manhwa
+## Features
 
-Search titles and authors
+- Discover and browse entertainment titles
+- Search and explore the catalog
+- Support for movies, TV series, anime, manga, and manhwa
+- Detailed title information
+- Personal library management
+- Favorites
+- Watching and reading progress
+- Status tracking such as Watching, Reading, Completed, and Pending
+- Regional catalog organization
+- Language and country classification
+- Genre classification
+- Mobile-friendly responsive interface
+- Persistent user data
+- User authentication
+- Automated catalog ingestion
+- Administrative database integrity diagnostics
 
-View detailed manga information
+## Catalog
 
-Add titles to personal library
+The catalog stores structured information for each title, including:
 
-Mark titles as:
+- Title information
+- Media type
+- Region
+- Country
+- Language
+- Genres
+- Release information
+- Relationships between titles and metadata
 
-Reading
+Titles are organized into regional catalogs so the application can provide a clearer view of content from different markets and languages.
 
-Pending
+## Automated Ingestion
 
-Completed
+LetMeCheck includes an automated ingestion system for expanding and maintaining the catalog.
 
-Dropped
+The ingestion system supports:
 
+- Scheduled ingestion
+- Configurable daily ingestion limits
+- Incremental processing
+- Persistent cursor/state tracking
+- Region-based processing
+- Duplicate prevention
+- Safe repeated execution
+- Metadata and relationship processing
 
-Add/remove favorites
+The system is designed to continue processing from its previous state rather than repeatedly starting from the beginning.
 
-Track reading progress
+## Database & Integrity
 
-User authentication
+The application uses **Supabase/PostgreSQL** as its primary database.
 
-Persistent user data with Supabase
+Catalog data is stored using relational connections between titles and their metadata. Administrative diagnostics are available to verify that these relationships remain consistent.
 
-Library data remains available after refresh and sign-in again
+Integrity checks include:
 
-Responsive interface for desktop and mobile
+- Title-to-language relationships
+- Title-to-country relationships
+- Title-to-region relationships
+- Title-to-genre relationships
+- Missing relationships
+- Orphaned records
+- Classification consistency
 
-Local storage fallback for supported data when appropriate
+The goal is to maintain a reliable catalog as new content is continuously added.
 
-Online synchronization through Supabase
+## Personal Library
 
+Users can maintain their own collection independently from the main catalog.
 
-Tech Stack
+Library features include:
 
-Frontend: React + TypeScript
+- Add or remove titles
+- Track favorites
+- Track watching or reading status
+- Record progress
+- View completed and in-progress content
+- Continue from previously tracked titles
 
-Build Tool: Vite
+User-specific data is stored separately from the global catalog so catalog ingestion does not overwrite personal library information.
 
-Styling: CSS
+## Tech Stack
 
-Database: Supabase / PostgreSQL
+- **Frontend:** React + TypeScript
+- **Build Tool:** Vite
+- **Database:** Supabase / PostgreSQL
+- **Authentication:** Supabase Auth
+- **Testing:** Playwright
+- **Development:** Google AI Studio, GitHub and Vite
 
-Authentication: Supabase Auth
+## Project Structure
 
-Manga Data: Manga API service
-
-Testing: Playwright
-
-Deployment/Development: GitHub Codespaces / Vite
-
-
-Project Structure
-
+```text
 LetMeCheck/
 ├── public/
 ├── src/
 │   ├── components/
-│   │   └── manga/
 │   ├── hooks/
 │   ├── pages/
 │   ├── services/
-│   │   ├── mangaApi.ts
-│   │   ├── storage.ts
-│   │   ├── supabase.ts
-│   │   └── sync.ts
 │   ├── types/
 │   ├── utils/
 │   ├── App.tsx
-│   ├── main.tsx
-│   └── index.css
+│   └── main.tsx
 ├── supabase/
 │   ├── migrations/
-│   ├── seed.sql
-│   └── ...
-├── run-e2e-test.js
-├── verify-fix.js
-├── E2E_TEST_GUIDE.md
+│   └── seed.sql
 ├── package.json
 └── README.md
-
-Data Persistence
-
-User library and favorite data are designed to persist through Supabase.
-
-The application follows this general flow:
-
-User Action
-    ↓
-Supabase Operation
-    ↓
-Check Success / Failure
-    ↓
-Update UI State
-    ↓
-Update Local Storage Fallback
-
-Supabase operations are checked before updating the application's persistent state. Failed operations should not incorrectly make the UI appear as though data was successfully saved.
-
-Authentication
-
-Users can register and sign in using Supabase authentication.
-
-After signing out and signing back in, the application should retrieve the user's saved library and favorites from Supabase.
 
 Development
 
@@ -122,69 +127,30 @@ Start the development server:
 
 npm run dev
 
-The Vite development server normally runs at:
+Build the application:
 
-http://localhost:3000
+npm run build
 
-Testing
+Development Principles
 
-The project contains end-to-end testing utilities using Playwright.
+Preserve existing user data.
 
-Example:
+Keep catalog and user data logically separated.
 
-node run-e2e-test.js
+Fix underlying data and relationship problems instead of hardcoding results in the UI.
 
-Additional verification scripts are included for checking data-persistence behavior.
+Keep ingestion safe to run repeatedly.
 
-Current Development Focus
+Avoid unnecessary database schema changes.
 
-The current version is focused on stabilizing:
+Validate database relationships after significant catalog changes.
 
-1. Favorite button interactions
-
-
-2. Library status controls
+Keep the application responsive across mobile and desktop.
 
 
-3. Reading/Pending/Completed filtering
+Project Status
 
-
-4. Mobile responsive layout
-
-
-5. Library section positioning and overflow
-
-
-6. Supabase data persistence
-
-
-7. Refresh and sign-out/sign-in persistence
-
-
-8. Error handling for failed Supabase operations
-
-
-
-Important Development Rule
-
-UI fixes should not unnecessarily modify:
-
-Supabase authentication
-
-Database schema
-
-RLS policies
-
-Persistence service logic
-
-Synchronization logic
-
-Existing data models
-
-
-Unless a bug is proven to originate there.
-
-The priority is to make the existing UI interactions and responsive layout work correctly while preserving the working data-persistence implementation.
+LetMeCheck is an actively developed project. The current development focus is improving catalog reliability, automated ingestion, metadata classification, database integrity, and the overall user experience.
 
 License
 
