@@ -116,42 +116,41 @@ LetMeCheck/
 │   └── seed.sql
 ├── package.json
 └── README.md
+```
+## Development
 
-Development
+### Install dependencies
 
-Install dependencies:
-
+```bash
 npm install
+```
 
-Start the development server:
+### Start the development server
 
+```bash
 npm run dev
+```
 
-Build the application:
+### Build the application
 
+```bash
 npm run build
+```
 
-Development Principles
+## Development Principles
 
-Preserve existing user data.
+- Preserve existing user data.
+- Keep catalog and user data logically separated.
+- Fix underlying data and relationship problems instead of hardcoding results in the UI.
+- Keep ingestion safe to run repeatedly.
+- Avoid unnecessary database schema changes.
+- Validate database relationships after significant catalog changes.
+- Keep the application responsive across mobile and desktop.
 
-Keep catalog and user data logically separated.
-
-Fix underlying data and relationship problems instead of hardcoding results in the UI.
-
-Keep ingestion safe to run repeatedly.
-
-Avoid unnecessary database schema changes.
-
-Validate database relationships after significant catalog changes.
-
-Keep the application responsive across mobile and desktop.
-
-
-Project Status
+## Project Status
 
 LetMeCheck is an actively developed project. The current development focus is improving catalog reliability, automated ingestion, metadata classification, database integrity, and the overall user experience.
 
-License
+## License
 
 This project is currently a personal development project.
