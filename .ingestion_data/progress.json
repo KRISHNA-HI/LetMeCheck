@@ -1,0 +1,202 @@
+{
+  "mollywood_movie": {
+    "industry_code": "mollywood",
+    "content_type": "movie",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 0,
+    "last_synced_at": "2026-08-19T14:41:05.66+00:00",
+    "retry_count": 0
+  },
+  "mollywood_tv_series": {
+    "industry_code": "mollywood",
+    "content_type": "tv_series",
+    "current_page": 3,
+    "last_successful_page": 2,
+    "total_pages_scanned": 2,
+    "items_inserted": 37,
+    "last_synced_at": "2026-08-20T08:34:30.089Z",
+    "retry_count": 0
+  },
+  "korean_cinema_movie": {
+    "industry_code": "korean_cinema",
+    "content_type": "movie",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 0,
+    "last_synced_at": "2026-08-19T14:43:02.909+00:00",
+    "retry_count": 0
+  },
+  "korean_cinema_tv_series": {
+    "industry_code": "korean_cinema",
+    "content_type": "tv_series",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 20,
+    "last_synced_at": "2026-08-20T08:34:32.674Z",
+    "retry_count": 0
+  },
+  "sandalwood_movie": {
+    "industry_code": "sandalwood",
+    "content_type": "movie",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 20,
+    "last_synced_at": "2026-08-20T08:34:30.817Z",
+    "retry_count": 0
+  },
+  "sandalwood_tv_series": {
+    "industry_code": "sandalwood",
+    "content_type": "tv_series",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 20,
+    "last_synced_at": "2026-08-20T08:34:31.334Z",
+    "retry_count": 0
+  },
+  "tollywood_movie": {
+    "industry_code": "tollywood",
+    "content_type": "movie",
+    "current_page": 5,
+    "last_successful_page": 4,
+    "total_pages_scanned": 4,
+    "items_inserted": 0,
+    "last_synced_at": "2026-08-20T10:35:37.138+00:00",
+    "retry_count": 0
+  },
+  "tollywood_tv_series": {
+    "industry_code": "tollywood",
+    "content_type": "tv_series",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 20,
+    "last_synced_at": "2026-08-20T08:34:27.579Z",
+    "retry_count": 0
+  },
+  "kollywood_movie": {
+    "industry_code": "kollywood",
+    "content_type": "movie",
+    "current_page": 3,
+    "last_successful_page": 2,
+    "total_pages_scanned": 2,
+    "items_inserted": 40,
+    "last_synced_at": "2026-08-20T10:51:53.397Z",
+    "retry_count": 0
+  },
+  "kollywood_tv_series": {
+    "industry_code": "kollywood",
+    "content_type": "tv_series",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 20,
+    "last_synced_at": "2026-08-20T08:34:28.815Z",
+    "retry_count": 0
+  },
+  "bollywood_movie": {
+    "industry_code": "bollywood",
+    "content_type": "movie",
+    "current_page": 4,
+    "last_successful_page": 3,
+    "total_pages_scanned": 3,
+    "items_inserted": 0,
+    "last_synced_at": "2026-08-20T10:35:26.391+00:00",
+    "retry_count": 0
+  },
+  "bollywood_tv_series": {
+    "industry_code": "bollywood",
+    "content_type": "tv_series",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 20,
+    "last_synced_at": "2026-08-20T08:34:26.262Z",
+    "retry_count": 0
+  },
+  "japanese_cinema_movie": {
+    "industry_code": "japanese_cinema",
+    "content_type": "movie",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 20,
+    "last_synced_at": "2026-08-20T08:34:33.418Z",
+    "retry_count": 0
+  },
+  "japanese_cinema_tv_series": {
+    "industry_code": "japanese_cinema",
+    "content_type": "tv_series",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 20,
+    "last_synced_at": "2026-08-20T08:34:33.911Z",
+    "retry_count": 0
+  },
+  "anime_industry_movie": {
+    "industry_code": "anime_industry",
+    "content_type": "movie",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 7,
+    "last_synced_at": "2026-08-20T08:34:34.646Z",
+    "retry_count": 0
+  },
+  "anime_industry_tv_series": {
+    "industry_code": "anime_industry",
+    "content_type": "tv_series",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 2,
+    "last_synced_at": "2026-08-20T08:34:35.145Z",
+    "retry_count": 0
+  },
+  "hollywood_movie": {
+    "industry_code": "hollywood",
+    "content_type": "movie",
+    "current_page": 8,
+    "last_successful_page": 7,
+    "total_pages_scanned": 7,
+    "items_inserted": 0,
+    "last_synced_at": "2026-08-20T10:35:15.629+00:00",
+    "retry_count": 0
+  },
+  "hollywood_tv_series": {
+    "industry_code": "hollywood",
+    "content_type": "tv_series",
+    "current_page": 2,
+    "last_successful_page": 1,
+    "total_pages_scanned": 1,
+    "items_inserted": 20,
+    "last_synced_at": "2026-08-20T08:33:29.114Z",
+    "retry_count": 0
+  },
+  "hollywood_tv": {
+    "industry_code": "hollywood",
+    "content_type": "tv",
+    "current_page": 4,
+    "last_successful_page": 3,
+    "total_pages_scanned": 3,
+    "items_inserted": 0,
+    "last_synced_at": "2026-08-20T10:35:21.023+00:00",
+    "retry_count": 0
+  },
+  "bollywood_tv": {
+    "industry_code": "bollywood",
+    "content_type": "tv",
+    "current_page": 3,
+    "last_successful_page": 2,
+    "total_pages_scanned": 2,
+    "items_inserted": 0,
+    "last_synced_at": "2026-08-20T10:35:31.736+00:00",
+    "retry_count": 0
+  }
+}

@@ -14,7 +14,13 @@ function stripHtml(html?: string): string {
     .trim();
 }
 
-function normalizeType(countryOfOrigin?: string, format?: string): Manga['type'] {
+function normalizeType(countryOfOrigin?: string, format?: string, mediaType?: string): Manga['type'] {
+  if (mediaType === 'ANIME') {
+    if (format === 'MOVIE') return 'Movie';
+    if (format === 'OVA' || format === 'ONA') return 'OVA';
+    if (format === 'SPECIAL') return 'Special';
+    return 'Anime';
+  }
   if (countryOfOrigin === 'KR') return 'Manhwa';
   if (countryOfOrigin === 'CN' || countryOfOrigin === 'TW') return 'Manhua';
   if (format === 'NOVEL') return 'Light Novel';
@@ -38,6 +44,30 @@ function normalizeStatus(status?: string): Manga['status'] {
 }
 
 // Transform AniList raw media node to our standard Manga schema
+const catalogMemoryCache = new Map<string, Manga>();
+const inFlightDetailRequests = new Map<
+  string,
+  Promise<{ data: Manga | null; errorType: 'NOT_FOUND' | 'TEMPORARY_ERROR' | null; errorMessage?: string }>
+>();
+
+export class TemporaryApiError extends Error {
+  isTemporary = true;
+  statusCode?: number;
+  constructor(message: string, statusCode?: number) {
+    super(message);
+    this.name = 'TemporaryApiError';
+    this.statusCode = statusCode;
+  }
+}
+
+export class CatalogNotFoundError extends Error {
+  isNotFound = true;
+  constructor(message: string) {
+    super(message);
+    this.name = 'CatalogNotFoundError';
+  }
+}
+
 function transformAniListMedia(media: any): Manga {
   const englishTitle = media.title?.english?.trim() || null;
   const romajiTitle = media.title?.romaji?.trim() || null;
@@ -101,9 +131,9 @@ function transformAniListMedia(media: any): Manga {
   materials.push({
     id: `mat-main-${media.id}`,
     external_id: `main-${media.id}`,
-    type: normalizeType(media.countryOfOrigin, media.format),
-    title: `${englishTitle || romajiTitle || 'Original Work'} (Main Serialization)`,
-    number: media.chapters ? `${media.chapters} Chapters` : media.volumes ? `${media.volumes} Volumes` : 'Ongoing serialization',
+    type: normalizeType(media.countryOfOrigin, media.format, media.type),
+    title: `${englishTitle || romajiTitle || 'Original Work'} (${media.type === 'ANIME' ? 'Anime Adaptation' : 'Main Serialization'})`,
+    number: media.episodes ? `${media.episodes} Episodes` : media.chapters ? `${media.chapters} Chapters` : media.volumes ? `${media.volumes} Volumes` : 'Ongoing serialization',
     release_date: media.startDate?.year ? `${media.startDate.year}` : undefined
   });
 
@@ -139,19 +169,19 @@ function transformAniListMedia(media: any): Manga {
     });
   }
 
-  return {
+  const mangaObj: Manga = {
     id: String(media.id),
     anilist_id: media.id,
     title: primaryTitle,
     title_details: titleDetails,
     alternative_titles: altTitles,
     description: stripHtml(media.description) || 'No synopsis available for this title.',
-    type: normalizeType(media.countryOfOrigin, media.format),
+    type: normalizeType(media.countryOfOrigin, media.format, media.type),
     status: normalizeStatus(media.status),
     author: author || 'Unknown Author',
     artist: artist || author || 'Unknown Artist',
     genres: media.genres || [],
-    chapters: media.chapters || null,
+    chapters: media.episodes || media.chapters || null,
     volumes: media.volumes || null,
     cover_url: media.coverImage?.large || media.coverImage?.extraLarge || media.coverImage?.medium || '/placeholder-cover.svg',
     banner_url: media.bannerImage || null,
@@ -161,10 +191,19 @@ function transformAniListMedia(media: any): Manga {
     source: 'AniList',
     materials
   };
+
+  // Cache in memory for instant lookups
+  catalogMemoryCache.set(mangaObj.id.toString(), mangaObj);
+  if (mangaObj.anilist_id) {
+    catalogMemoryCache.set(mangaObj.anilist_id.toString(), mangaObj);
+  }
+
+  return mangaObj;
 }
 
 const MANGA_FIELDS_FRAGMENT = `
   id
+  type
   title {
     romaji
     english
@@ -178,6 +217,7 @@ const MANGA_FIELDS_FRAGMENT = `
   genres
   chapters
   volumes
+  episodes
   averageScore
   popularity
   startDate {
@@ -223,26 +263,64 @@ const MANGA_FIELDS_FRAGMENT = `
   }
 `;
 
-async function executeAniListQuery(query: string, variables: Record<string, any>) {
-  const response = await fetch(ANILIST_GRAPHQL_ENDPOINT, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Accept: 'application/json'
-    },
-    body: JSON.stringify({ query, variables })
-  });
+async function executeAniListQuery(query: string, variables: Record<string, any>, maxRetries = 2) {
+  let attempt = 0;
+  let lastError: any = null;
 
-  if (!response.ok) {
-    throw new Error(`AniList API returned ${response.status}: ${response.statusText}`);
+  while (attempt <= maxRetries) {
+    try {
+      const response = await fetch(ANILIST_GRAPHQL_ENDPOINT, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json'
+        },
+        body: JSON.stringify({ query, variables })
+      });
+
+      if (!response.ok) {
+        if (response.status === 429) {
+          throw new TemporaryApiError('AniList API rate limit reached. Please wait a moment.', 429);
+        }
+        if (response.status >= 500) {
+          throw new TemporaryApiError(`AniList server temporarily unavailable (${response.status})`, response.status);
+        }
+        if (response.status === 404) {
+          throw new CatalogNotFoundError('Resource not found on AniList.');
+        }
+        throw new TemporaryApiError(`AniList API returned status ${response.status}: ${response.statusText}`, response.status);
+      }
+
+      const json = await response.json();
+      if (json.errors && json.errors.length > 0) {
+        const errMsg = json.errors[0]?.message || 'AniList GraphQL Query Error';
+        if (errMsg.toLowerCase().includes('not found') || errMsg.includes('404')) {
+          throw new CatalogNotFoundError('Title not found in AniList catalog.');
+        }
+        throw new TemporaryApiError(errMsg);
+      }
+
+      return json.data;
+    } catch (err: any) {
+      lastError = err;
+
+      // Do not retry genuine 404 / not found errors
+      if (err instanceof CatalogNotFoundError) {
+        throw err;
+      }
+
+      attempt++;
+      if (attempt <= maxRetries) {
+        const backoffDelay = Math.min(500 * Math.pow(2, attempt - 1), 2000) + Math.random() * 150;
+        await new Promise((resolve) => setTimeout(resolve, backoffDelay));
+      }
+    }
   }
 
-  const json = await response.json();
-  if (json.errors && json.errors.length > 0) {
-    throw new Error(json.errors[0].message || 'AniList GraphQL Query Error');
+  if (lastError instanceof TemporaryApiError || lastError instanceof CatalogNotFoundError) {
+    throw lastError;
   }
-
-  return json.data;
+  throw new TemporaryApiError(lastError?.message || 'Network error connecting to AniList.');
 }
 
 export const anilistService = {
@@ -281,6 +359,44 @@ export const anilistService = {
     } catch (err) {
       console.warn('AniList Popular fetch failed, using fallback:', err);
       return SAMPLE_MANGA;
+    }
+  },
+
+  async getTrendingAnime(page = 1, perPage = 12): Promise<Manga[]> {
+    try {
+      const query = `
+        query GetTrendingAnime($page: Int, $perPage: Int) {
+          Page(page: $page, perPage: $perPage) {
+            media(type: ANIME, sort: TRENDING_DESC, isAdult: false) {
+              ${MANGA_FIELDS_FRAGMENT}
+            }
+          }
+        }
+      `;
+      const data = await executeAniListQuery(query, { page, perPage });
+      return (data.Page?.media || []).map(transformAniListMedia);
+    } catch (err) {
+      console.warn('AniList Trending Anime fetch failed:', err);
+      return [];
+    }
+  },
+
+  async getPopularAnime(page = 1, perPage = 12): Promise<Manga[]> {
+    try {
+      const query = `
+        query GetPopularAnime($page: Int, $perPage: Int) {
+          Page(page: $page, perPage: $perPage) {
+            media(type: ANIME, sort: POPULARITY_DESC, isAdult: false) {
+              ${MANGA_FIELDS_FRAGMENT}
+            }
+          }
+        }
+      `;
+      const data = await executeAniListQuery(query, { page, perPage });
+      return (data.Page?.media || []).map(transformAniListMedia);
+    } catch (err) {
+      console.warn('AniList Popular Anime fetch failed:', err);
+      return [];
     }
   },
 
@@ -335,28 +451,132 @@ export const anilistService = {
     }
   },
 
-  async getMangaById(id: number | string): Promise<Manga | null> {
-    try {
-      const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
-      if (isNaN(numericId)) {
-        // Find in sample
-        return SAMPLE_MANGA.find((m) => m.id.toString() === id.toString()) || null;
-      }
+  async searchAnime(queryText: string, page = 1, perPage = 20): Promise<{ items: Manga[]; hasNextPage: boolean }> {
+    const rawQuery = queryText.trim();
+    if (!rawQuery) {
+      return { items: [], hasNextPage: false };
+    }
 
+    try {
       const query = `
-        query GetMangaById($id: Int) {
-          Media(id: $id, type: MANGA) {
-            ${MANGA_FIELDS_FRAGMENT}
+        query SearchAnime($search: String, $page: Int, $perPage: Int) {
+          Page(page: $page, perPage: $perPage) {
+            pageInfo {
+              hasNextPage
+            }
+            media(type: ANIME, search: $search, isAdult: false, sort: SEARCH_MATCH) {
+              ${MANGA_FIELDS_FRAGMENT}
+            }
           }
         }
       `;
-      const data = await executeAniListQuery(query, { id: numericId });
-      if (!data.Media) return null;
-      return transformAniListMedia(data.Media);
+      const data = await executeAniListQuery(query, { search: rawQuery, page, perPage });
+      return {
+        items: (data.Page.media || []).map(transformAniListMedia),
+        hasNextPage: Boolean(data.Page.pageInfo?.hasNextPage)
+      };
     } catch (err) {
-      console.warn(`AniList getMangaById(${id}) failed, checking local samples:`, err);
-      return SAMPLE_MANGA.find((m) => m.id.toString() === id.toString() || m.anilist_id?.toString() === id.toString()) || null;
+      console.warn('AniList Anime Search failed:', err);
+      return { items: [], hasNextPage: false };
     }
+  },
+
+  async searchAll(queryText: string, page = 1, perPage = 20): Promise<{ items: Manga[]; hasNextPage: boolean }> {
+    const rawQuery = queryText.trim();
+    if (!rawQuery) {
+      return { items: [], hasNextPage: false };
+    }
+
+    const halfPerPage = Math.max(5, Math.ceil(perPage / 2));
+    const [animeRes, mangaRes] = await Promise.allSettled([
+      this.searchAnime(rawQuery, page, halfPerPage),
+      this.searchManga(rawQuery, page, halfPerPage)
+    ]);
+
+    const animeItems = animeRes.status === 'fulfilled' ? animeRes.value.items : [];
+    const mangaItems = mangaRes.status === 'fulfilled' ? mangaRes.value.items : [];
+    const hasNext =
+      (animeRes.status === 'fulfilled' && animeRes.value.hasNextPage) ||
+      (mangaRes.status === 'fulfilled' && mangaRes.value.hasNextPage);
+
+    return {
+      items: [...animeItems, ...mangaItems],
+      hasNextPage: hasNext
+    };
+  },
+
+  async getMangaById(id: number | string): Promise<Manga | null> {
+    const result = await this.getMangaByIdDetailed(id);
+    return result.data;
+  },
+
+  async getMangaByIdDetailed(
+    id: number | string
+  ): Promise<{ data: Manga | null; errorType: 'NOT_FOUND' | 'TEMPORARY_ERROR' | null; errorMessage?: string }> {
+    const idKey = id ? id.toString() : '';
+    if (!idKey) {
+      return { data: null, errorType: 'NOT_FOUND', errorMessage: 'Invalid title ID.' };
+    }
+
+    // 1. Check in-memory cache first
+    if (catalogMemoryCache.has(idKey)) {
+      return { data: catalogMemoryCache.get(idKey)!, errorType: null };
+    }
+
+    // 2. Check local sample manga
+    const sample = SAMPLE_MANGA.find(
+      (m) => m.id.toString() === idKey || (m.anilist_id && m.anilist_id.toString() === idKey)
+    );
+    if (sample) {
+      catalogMemoryCache.set(idKey, sample);
+      return { data: sample, errorType: null };
+    }
+
+    // 3. Deduplicate in-flight requests for the exact same ID
+    if (inFlightDetailRequests.has(idKey)) {
+      return inFlightDetailRequests.get(idKey)!;
+    }
+
+    const requestPromise = (async () => {
+      try {
+        const numericId = typeof id === 'string' ? parseInt(id, 10) : id;
+        if (isNaN(numericId)) {
+          // If non-numeric and not in cache/sample, mark not found
+          return { data: null, errorType: 'NOT_FOUND' as const, errorMessage: 'Title not found in catalog.' };
+        }
+
+        const query = `
+          query GetMangaById($id: Int) {
+            Media(id: $id, type: MANGA) {
+              ${MANGA_FIELDS_FRAGMENT}
+            }
+          }
+        `;
+        const data = await executeAniListQuery(query, { id: numericId });
+        if (!data || !data.Media) {
+          return { data: null, errorType: 'NOT_FOUND' as const, errorMessage: 'Title not found in AniList catalog.' };
+        }
+
+        const transformed = transformAniListMedia(data.Media);
+        return { data: transformed, errorType: null };
+      } catch (err: any) {
+        if (err instanceof CatalogNotFoundError) {
+          return { data: null, errorType: 'NOT_FOUND' as const, errorMessage: 'Title not found in AniList catalog.' };
+        }
+
+        console.warn(`AniList getMangaById(${id}) encountered temporary error:`, err);
+        return {
+          data: null,
+          errorType: 'TEMPORARY_ERROR' as const,
+          errorMessage: err?.message || 'Temporary connection issue with catalog.'
+        };
+      } finally {
+        inFlightDetailRequests.delete(idKey);
+      }
+    })();
+
+    inFlightDetailRequests.set(idKey, requestPromise);
+    return requestPromise;
   },
 
   async discoverManga(filters: SearchFilters): Promise<{ items: Manga[]; hasNextPage: boolean }> {

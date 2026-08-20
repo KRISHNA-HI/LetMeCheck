@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { Manga, MangaMaterial, MaterialStatus, MaterialType } from '../../types';
 import { useLibrary } from '../../hooks/useLibrary';
-import { getMaterialTypeBadgeClass, getDisplayTitle } from '../../utils/formatters';
+import { getMaterialTypeBadgeClass, getDisplayTitle, getMaterialStatusLabel } from '../../utils/formatters';
 
 interface MaterialGuideProps {
   manga: Manga;
@@ -194,7 +194,7 @@ export const MaterialGuide: React.FC<MaterialGuideProps> = ({ manga }) => {
                               st
                             )}`}
                           >
-                            {st}
+                            {getMaterialStatusLabel(st, mat.type)}
                           </button>
                         ))}
                       </div>

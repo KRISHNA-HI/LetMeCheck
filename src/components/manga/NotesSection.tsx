@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { StickyNote, Save, Trash2, CheckCircle2 } from 'lucide-react';
 import { Manga } from '../../types';
 import { useLibrary } from '../../hooks/useLibrary';
+import { isReadingMedia } from '../../utils/formatters';
 
 interface NotesSectionProps {
   manga: Manga;
@@ -9,8 +10,9 @@ interface NotesSectionProps {
 
 export const NotesSection: React.FC<NotesSectionProps> = ({ manga }) => {
   const { getNoteForManga, saveMangaNote, deleteMangaNote } = useLibrary();
-  const note = getNoteForManga(manga.id);
+  const note = getNoteForManga(manga);
 
+  const isReading = isReadingMedia(manga.type);
   const [content, setContent] = useState<string>(note?.content || '');
   const [savedStatus, setSavedStatus] = useState<boolean>(false);
   const [isSaving, setIsSaving] = useState<boolean>(false);
@@ -43,8 +45,12 @@ export const NotesSection: React.FC<NotesSectionProps> = ({ manga }) => {
             <StickyNote className="w-4 h-4" />
           </div>
           <div>
-            <h3 className="text-base font-bold text-zinc-100">Personal Reading Notes</h3>
-            <p className="text-xs text-zinc-400">Private to your account (e.g. bookmarks, thoughts, chapter reminders)</p>
+            <h3 className="text-base font-bold text-zinc-100">Personal Notes</h3>
+            <p className="text-xs text-zinc-400">
+              {isReading
+                ? 'Private to your account (e.g. bookmarks, chapter reminders, personal review)'
+                : 'Private to your account (e.g. episode tracking, favorite scenes, personal review)'}
+            </p>
           </div>
         </div>
 
@@ -57,8 +63,12 @@ export const NotesSection: React.FC<NotesSectionProps> = ({ manga }) => {
 
       <div className="flex flex-col gap-3">
         <textarea
-          rows={3}
-          placeholder="E.g., Stopped at chapter 87. Need to continue after exam, amazing battle in chapter 60..."
+          rows={4}
+          placeholder={
+            isReading
+              ? 'E.g., Stopped at chapter 87. Need to continue after exams, favorite arc starts at chapter 60...'
+              : 'E.g., Finished Season 1 Episode 8. Awesome climax, recommend watching with friends...'
+          }
           value={content}
           onChange={(e) => setContent(e.target.value)}
           className="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl p-3 text-xs sm:text-sm text-zinc-200 placeholder-zinc-500 focus:outline-hidden focus:border-sky-500 resize-none transition-colors"

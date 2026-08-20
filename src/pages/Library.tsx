@@ -1,27 +1,28 @@
 import React, { useState } from 'react';
 import {
   Bookmark,
-  BookOpen,
-  Filter,
-  CheckCircle2,
-  Clock,
-  Circle,
-  XCircle,
-  Search,
+  Sparkles,
   LayoutGrid,
   List,
-  Sparkles,
-  ArrowRight,
-  ChevronDown
+  Search,
+  BookOpen,
+  ArrowRight
 } from 'lucide-react';
-import { Manga, UserLibraryEntry, ReadingStatus, MangaType } from '../types';
+import { ReadingStatus, Manga, MangaType } from '../types';
 import { useAuth } from '../hooks/useAuth';
 import { useLibrary } from '../hooks/useLibrary';
 import { MangaCard } from '../components/manga/MangaCard';
-import { ProgressBar } from '../components/common/ProgressBar';
 import { ImageWithFallback } from '../components/common/ImageWithFallback';
+import { ProgressBar } from '../components/common/ProgressBar';
 import { StatusSelector } from '../components/manga/StatusSelector';
-import { getMaterialTypeBadgeClass, getDisplayTitle, matchesMangaTitle } from '../utils/formatters';
+import {
+  getMaterialTypeBadgeClass,
+  getStatusColorClass,
+  getDisplayTitle,
+  matchesMangaTitle,
+  getPresentationStatus,
+  isReadingMedia
+} from '../utils/formatters';
 
 interface LibraryProps {
   navigate: (route: string) => void;
@@ -30,21 +31,30 @@ interface LibraryProps {
 
 const STATUS_TABS: { label: string; value: ReadingStatus | 'All'; countKey: string }[] = [
   { label: 'All Titles', value: 'All', countKey: 'total' },
-  { label: 'Reading', value: 'Reading', countKey: 'reading' },
-  { label: 'Plan to Read', value: 'Pending', countKey: 'pending' },
+  { label: 'In Progress', value: 'Reading', countKey: 'reading' },
+  { label: 'Want to Watch / Read', value: 'Pending', countKey: 'pending' },
   { label: 'Completed', value: 'Completed', countKey: 'completed' },
   { label: 'On Hold', value: 'On Hold', countKey: 'onHold' },
   { label: 'Dropped', value: 'Dropped', countKey: 'dropped' }
 ];
 
 export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => {
-  const { user } = useAuth();
-  const { library, stats, getProgressForManga } = useLibrary();
+  const { user, loading: authLoading } = useAuth();
+  const { library, stats, getProgressForManga, loading: libraryLoading } = useLibrary();
 
   const [activeStatus, setActiveStatus] = useState<ReadingStatus | 'All'>('All');
   const [searchFilter, setSearchFilter] = useState<string>('');
   const [selectedType, setSelectedType] = useState<MangaType | 'All'>('All');
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+
+  if (authLoading || (user && libraryLoading)) {
+    return (
+      <div className="flex flex-col items-center justify-center p-16 text-center max-w-lg mx-auto">
+        <div className="w-8 h-8 rounded-full border-2 border-sky-400 border-t-transparent animate-spin mb-4" />
+        <p className="text-xs text-zinc-400">Loading your personal library...</p>
+      </div>
+    );
+  }
 
   // If user is not logged in, enforce the strict auth requirement
   if (!user) {
@@ -55,7 +65,7 @@ export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => 
         </div>
         <h2 className="text-xl sm:text-2xl font-black text-zinc-100 mb-2">Library is a Personal Feature</h2>
         <p className="text-xs sm:text-sm text-zinc-400 mb-6 leading-relaxed">
-          Create a free account or sign in to track your reading progress, organize custom statuses (Reading, Plan to Read, Completed), and sync across all devices.
+          Create a free account or sign in to track your watch & reading progress, organize custom statuses (In Progress, Want to Watch/Read, Completed), and sync across all devices.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
           <button
@@ -87,7 +97,7 @@ export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => 
   });
 
   return (
-    <div className="flex flex-col gap-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div className="flex flex-col gap-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-20">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -96,7 +106,7 @@ export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => 
             <span>Your Personal Library</span>
           </h1>
           <p className="text-xs sm:text-sm text-zinc-400 mt-1">
-            Track reading progress, manage custom tags, and access your collection
+            Track watch and reading progress, manage custom lists, and access your collection
           </p>
         </div>
 
@@ -116,11 +126,11 @@ export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => 
           <span className="text-lg font-bold text-zinc-100 mt-0.5">{stats.total}</span>
         </div>
         <div className="bg-zinc-900/60 border border-zinc-800 p-3 rounded-xl flex flex-col">
-          <span className="text-xs text-sky-400">Currently Reading</span>
+          <span className="text-xs text-sky-400">In Progress</span>
           <span className="text-lg font-bold text-sky-300 mt-0.5">{stats.reading}</span>
         </div>
         <div className="bg-zinc-900/60 border border-zinc-800 p-3 rounded-xl flex flex-col">
-          <span className="text-xs text-amber-400">Plan to Read</span>
+          <span className="text-xs text-amber-400">Want to Watch / Read</span>
           <span className="text-lg font-bold text-amber-300 mt-0.5">{stats.pending}</span>
         </div>
         <div className="bg-zinc-900/60 border border-zinc-800 p-3 rounded-xl flex flex-col">
@@ -188,9 +198,11 @@ export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => 
               className="bg-zinc-950/70 border border-zinc-800 rounded-xl px-3 py-1.5 text-xs text-zinc-300 focus:outline-hidden focus:border-sky-500 cursor-pointer"
             >
               <option value="All">All Formats</option>
+              <option value="Movie">Movie</option>
+              <option value="TV Series">TV Series</option>
+              <option value="Anime">Anime</option>
               <option value="Manga">Manga</option>
               <option value="Manhwa">Manhwa</option>
-              <option value="Manhua">Manhua</option>
               <option value="Light Novel">Light Novel</option>
             </select>
           </div>
@@ -240,7 +252,7 @@ export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => 
               onClick={() => navigate('discover')}
               className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-zinc-950 font-bold text-xs transition-colors cursor-pointer"
             >
-              <span>Explore Manga Catalog</span>
+              <span>Explore Catalog</span>
               <ArrowRight className="w-3.5 h-3.5" />
             </button>
           )}
@@ -276,38 +288,39 @@ export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => 
                   const prog = getProgressForManga(manga.id);
                   const chRead = prog?.chapters_read || 0;
                   const totalCh = manga.chapters;
+                  const presStatus = getPresentationStatus(entry.status, manga.type);
 
-                    return (
-                      <tr
-                        key={entry.manga_id}
-                        className="hover:bg-zinc-800/40 transition-colors group cursor-pointer"
-                        onClick={() => onSelectManga(manga)}
-                      >
-                        <td className="py-3 px-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-10 aspect-[2/3] shrink-0 rounded overflow-hidden border border-zinc-800 bg-zinc-950">
-                              <ImageWithFallback
-                                src={manga.cover_url}
-                                alt={getDisplayTitle(manga)}
-                                aspectRatio="aspect-[2/3]"
-                              />
-                            </div>
-                            <div className="flex flex-col">
-                              <span className="text-sm font-bold text-zinc-100 group-hover:text-sky-400 transition-colors line-clamp-1">
-                                {getDisplayTitle(manga)}
-                              </span>
-                              {manga.release_year && (
-                                <span className="text-[11px] text-zinc-400">
-                                  {manga.release_year}
-                                </span>
-                              )}
-                            </div>
+                  return (
+                    <tr
+                      key={entry.manga_id}
+                      className="hover:bg-zinc-800/40 transition-colors group cursor-pointer"
+                      onClick={() => onSelectManga(manga)}
+                    >
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 aspect-[2/3] shrink-0 rounded overflow-hidden border border-zinc-800 bg-zinc-950">
+                            <ImageWithFallback
+                              src={manga.cover_url}
+                              alt={getDisplayTitle(manga)}
+                              aspectRatio="aspect-[2/3]"
+                            />
                           </div>
-                        </td>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-bold text-zinc-100 group-hover:text-sky-400 transition-colors line-clamp-1">
+                              {getDisplayTitle(manga)}
+                            </span>
+                            {manga.release_year && (
+                              <span className="text-[11px] text-zinc-400">
+                                {manga.release_year}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </td>
 
                       <td className="py-3 px-4">
-                        <span className="text-xs px-2 py-0.5 rounded bg-zinc-950 border border-zinc-800 text-zinc-300">
-                          {entry.status}
+                        <span className={`text-xs px-2 py-0.5 rounded border ${getStatusColorClass(presStatus)}`}>
+                          {presStatus}
                         </span>
                       </td>
 
@@ -323,7 +336,7 @@ export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => 
                           total={totalCh}
                           size="sm"
                           showLabels={true}
-                          unitLabel="Ch."
+                          unitLabel={isReadingMedia(manga.type) ? 'Ch.' : 'Ep.'}
                         />
                       </td>
 
@@ -331,7 +344,7 @@ export const Library: React.FC<LibraryProps> = ({ navigate, onSelectManga }) => 
                         className="py-3 px-4 text-right"
                         onClick={(e) => e.stopPropagation()}
                       >
-                        <StatusSelector manga={manga} size="sm" />
+                        <StatusSelector manga={manga} size="sm" align="right" />
                       </td>
                     </tr>
                   );

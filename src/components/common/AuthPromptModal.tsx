@@ -1,5 +1,5 @@
 import React from 'react';
-import { LogIn, UserPlus, X, Bookmark, CheckCircle2, ShieldCheck, Sparkles } from 'lucide-react';
+import { LogIn, UserPlus, X, Bookmark, CheckCircle2, Sparkles, Layers } from 'lucide-react';
 
 interface AuthPromptModalProps {
   isOpen: boolean;
@@ -14,7 +14,7 @@ export const AuthPromptModal: React.FC<AuthPromptModalProps> = ({
   onClose,
   onLogin,
   onRegister,
-  actionTitle = 'track your manga progress'
+  actionTitle
 }) => {
   if (!isOpen) return null;
 
@@ -43,12 +43,14 @@ export const AuthPromptModal: React.FC<AuthPromptModalProps> = ({
             <Bookmark className="w-6 h-6" />
           </div>
 
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <h3 className="text-xl font-black text-zinc-100 tracking-tight">
               Account Required
             </h3>
             <p className="text-xs text-zinc-400 max-w-xs leading-relaxed">
-              Create a free account or sign in to {actionTitle} and access personal tracking features.
+              {actionTitle
+                ? `Create a free account or sign in to ${actionTitle} and sync across your devices.`
+                : 'Create a free account or sign in to track, discover, and organize your favorite movies, TV series, anime, manga, and more.'}
             </p>
           </div>
         </div>
@@ -57,20 +59,30 @@ export const AuthPromptModal: React.FC<AuthPromptModalProps> = ({
         <div className="bg-zinc-950/60 border border-zinc-800/80 rounded-2xl p-3.5 flex flex-col gap-2.5 text-xs text-zinc-300">
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
-            <span>Track chapter & volume progress across devices</span>
+            <span>Track watch & reading progress across all your devices</span>
           </div>
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
-            <span>Organize reading statuses (Reading, Completed, etc.)</span>
+            <span>Organize custom library statuses (Watching, Reading, Plan to Watch, Completed)</span>
           </div>
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
-            <span>Track adaptation & material guide item statuses</span>
+            <span>Discover release dates, adaptation alerts, and regional streaming/theatrical availability</span>
           </div>
           <div className="flex items-center gap-2.5">
             <CheckCircle2 className="w-4 h-4 text-sky-400 shrink-0" />
-            <span>Save favorites & personal reading notes</span>
+            <span>Build personal collections, ratings, and private notes</span>
           </div>
+        </div>
+
+        {/* Supported Media Formats Subtitle/Badge List */}
+        <div className="flex items-center justify-center gap-1.5 flex-wrap text-[11px] text-zinc-500">
+          <span className="text-zinc-400">Supports:</span>
+          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Movies</span>
+          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">TV Series</span>
+          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Anime</span>
+          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Manga</span>
+          <span className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">Manhwa</span>
         </div>
 
         {/* Action Buttons */}

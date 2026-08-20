@@ -3,23 +3,22 @@ import {
   TrendingUp,
   Clock,
   Sparkles,
-  BookOpen,
   Bookmark,
   Heart,
   ArrowRight,
-  Search as SearchIcon
+  Play
 } from 'lucide-react';
 import { Manga } from '../types';
 import { mangaApi } from '../services/mangaApi';
-import { localStorageService } from '../services/storage';
+import { contentService, contentItemToManga } from '../services/contentService';
 import { useAuth } from '../hooks/useAuth';
 import { useLibrary } from '../hooks/useLibrary';
 import { MangaGrid } from '../components/manga/MangaGrid';
-import { StatusSelector } from '../components/manga/StatusSelector';
+import { HeroSlider, HeroSlideItem } from '../components/manga/HeroSlider';
 import { ProgressBar } from '../components/common/ProgressBar';
 import { ImageWithFallback } from '../components/common/ImageWithFallback';
 import { SAMPLE_NARUTO, SAMPLE_MANGA } from '../data/sampleManga';
-import { getDisplayTitle } from '../utils/formatters';
+import { getDisplayTitle, isReadingMedia, hasUsableImage, getReliableCoverUrl } from '../utils/formatters';
 
 interface HomeProps {
   navigate: (route: string) => void;
@@ -27,8 +26,16 @@ interface HomeProps {
 }
 
 export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
-  const { user } = useAuth();
-  const { library, favorites, stats, getProgressForManga, isMangaFavorite, toggleFavorite } = useLibrary();
+  const { user, loading: authLoading } = useAuth();
+  const {
+    library,
+    favorites,
+    stats,
+    getProgressForManga,
+    isMangaFavorite,
+    toggleFavorite,
+    loading: libraryLoading
+  } = useLibrary();
 
   // AniList dynamic discovery lists
   const [defaultNaruto, setDefaultNaruto] = useState<Manga>(SAMPLE_NARUTO);
@@ -37,39 +44,45 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
   const [recentlyUpdated, setRecentlyUpdated] = useState<Manga[]>([]);
   const [loadingDiscovery, setLoadingDiscovery] = useState<boolean>(true);
 
-  // Search-based personalization
-  const [latestSearchQuery, setLatestSearchQuery] = useState<string>('');
-  const [recentSearchManga, setRecentSearchManga] = useState<Manga[]>([]);
-
-  // Favorite manga objects for personalized section
+  // Favorite manga objects for personalized section (ordered by newest favorite first)
   const [favoriteMangaList, setFavoriteMangaList] = useState<Manga[]>([]);
+  const [loadingFavorites, setLoadingFavorites] = useState<boolean>(false);
 
-  // 1. Fetch default Naruto data and discovery lists from AniList
+  // Multi-regional recent movies for the default carousel (genuinely recent released movies)
+  const [multiRegionalMovies, setMultiRegionalMovies] = useState<Manga[]>([]);
+
+  // 1. Fetch default Naruto data, discovery lists, and multi-regional recent movies
   useEffect(() => {
     let isMounted = true;
 
     const fetchDiscoveryData = async () => {
       setLoadingDiscovery(true);
       try {
-        const [narutoData, trendData, popData, recentData] = await Promise.all([
+        const [narutoData, trendingContentItems, popularContentItems, recentData, multiMovies] = await Promise.all([
           mangaApi.getDefaultNarutoManga(),
-          mangaApi.getTrendingManga(1, 10),
-          mangaApi.getPopularManga(1, 10),
-          mangaApi.getRecentlyUpdated(1, 10)
+          contentService.getTrendingContent(10),
+          contentService.getPopularContent(10),
+          mangaApi.getRecentlyUpdated(1, 10),
+          contentService.getRecentMultiRegionalMovies()
         ]);
 
         if (isMounted) {
-          if (narutoData) setDefaultNaruto(narutoData);
-          setTrending(trendData);
-          setPopular(popData);
-          setRecentlyUpdated(recentData);
+          if (narutoData && hasUsableImage(narutoData)) setDefaultNaruto(narutoData);
+          setTrending(trendingContentItems.map(contentItemToManga).filter(hasUsableImage));
+          setPopular(popularContentItems.map(contentItemToManga).filter(hasUsableImage));
+          setRecentlyUpdated((recentData || []).filter(hasUsableImage));
+
+          if (multiMovies && multiMovies.length > 0) {
+            const converted = multiMovies.map(contentItemToManga).filter(hasUsableImage);
+            setMultiRegionalMovies(converted);
+          }
         }
       } catch (err) {
         console.warn('Failed to load discovery data, fallback applied:', err);
         if (isMounted) {
-          setTrending(SAMPLE_MANGA);
-          setPopular(SAMPLE_MANGA);
-          setRecentlyUpdated(SAMPLE_MANGA);
+          setTrending(SAMPLE_MANGA.filter(hasUsableImage));
+          setPopular(SAMPLE_MANGA.filter(hasUsableImage));
+          setRecentlyUpdated(SAMPLE_MANGA.filter(hasUsableImage));
         }
       } finally {
         if (isMounted) setLoadingDiscovery(false);
@@ -82,83 +95,73 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
     };
   }, []);
 
-  // 2. Load recent searches and search-based recommendations
-  useEffect(() => {
-    let isMounted = true;
-    const searches = localStorageService.getRecentSearches();
-
-    if (searches.length > 0) {
-      const topQuery = searches[0];
-      setLatestSearchQuery(topQuery);
-
-      mangaApi
-        .searchManga(topQuery, 1, 6)
-        .then((res) => {
-          if (isMounted && res.items && res.items.length > 0) {
-            setRecentSearchManga(res.items);
-          }
-        })
-        .catch((err) => {
-          console.warn('Failed to fetch search recommendations for Home:', err);
-        });
-    } else {
-      setLatestSearchQuery('');
-      setRecentSearchManga([]);
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  // 3. Resolve user's favorite manga objects for "From Your Favorites"
+  // 2. Resolve user's favorite manga objects (ordered by recency of addition)
   useEffect(() => {
     let isMounted = true;
 
     if (!user || favorites.length === 0) {
       setFavoriteMangaList([]);
+      setLoadingFavorites(false);
       return;
     }
 
+    setLoadingFavorites(true);
     const loadFavorites = async () => {
       try {
-        const loaded: Manga[] = [];
+        const loadedMap = new Map<string, Manga>();
 
         // Gather from library first
         library.forEach((entry) => {
           if (
             entry.manga &&
+            hasUsableImage(entry.manga) &&
             (entry.is_favorite ||
               favorites.includes(entry.manga_id.toString()) ||
               (entry.manga.anilist_id && favorites.includes(entry.manga.anilist_id.toString())))
           ) {
-            if (!loaded.some((m) => m.id.toString() === entry.manga!.id.toString())) {
-              loaded.push(entry.manga);
+            loadedMap.set(entry.manga.id.toString(), entry.manga);
+            if (entry.manga.anilist_id) {
+              loadedMap.set(entry.manga.anilist_id.toString(), entry.manga);
             }
           }
         });
 
-        // Fetch any missing favorite IDs
-        const missingIds = favorites.filter(
-          (id) => !loaded.some((m) => m.id.toString() === id.toString() || m.anilist_id?.toString() === id.toString())
-        );
+        // Identify missing favorite IDs
+        const missingIds = favorites.filter((id) => !loadedMap.has(id.toString()));
 
         if (missingIds.length > 0) {
           const fetched = await Promise.all(
-            missingIds.slice(0, 8).map((id) => mangaApi.getMangaById(id))
+            missingIds.slice(0, 10).map((id) => mangaApi.getMangaById(id))
           );
           fetched.forEach((m) => {
-            if (m && !loaded.some((item) => item.id.toString() === m.id.toString())) {
-              loaded.push(m);
+            if (m && hasUsableImage(m)) {
+              loadedMap.set(m.id.toString(), m);
+              if (m.anilist_id) {
+                loadedMap.set(m.anilist_id.toString(), m);
+              }
             }
           });
         }
 
+        // Build list strictly in the order of `favorites` array (most recent first)
+        const orderedFavorites: Manga[] = [];
+        const seenIds = new Set<string>();
+
+        for (const favId of favorites) {
+          const manga = loadedMap.get(favId.toString());
+          if (manga && !seenIds.has(manga.id.toString())) {
+            seenIds.add(manga.id.toString());
+            orderedFavorites.push(manga);
+          }
+        }
+
         if (isMounted) {
-          setFavoriteMangaList(loaded);
+          setFavoriteMangaList(orderedFavorites);
         }
       } catch (err) {
         console.warn('Failed to resolve favorites for Home:', err);
+      } finally {
+        if (isMounted) setLoadingFavorites(false);
       }
     };
 
@@ -168,11 +171,12 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
     };
   }, [user, favorites, library]);
 
-  // 4. Compute sorted Currently Reading items (most recently active first)
+  // 3. Compute sorted Currently Reading / Watching items (most recently added/active first)
+  // Only status 'Reading' or 'Watching' are allowed to affect the Home hero.
   const currentlyReading = useMemo(() => {
     if (!user) return [];
     return library
-      .filter((e) => e.status === 'Reading' && e.manga)
+      .filter((e) => (e.status === 'Reading' || (e.status as string) === 'Watching') && e.manga && hasUsableImage(e.manga))
       .sort((a, b) => {
         const progA = getProgressForManga(a.manga_id);
         const progB = getProgressForManga(b.manga_id);
@@ -182,197 +186,156 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
       });
   }, [user, library, getProgressForManga]);
 
-  // 5. Compute other Library titles (Plan to Read, Completed, etc.)
+  // 4. Compute other Library titles (Plan to Read, Completed, etc. for separate section)
   const otherLibraryMangas = useMemo(() => {
     if (!user) return [];
     return library
-      .filter((e) => e.status !== 'Reading' && e.manga)
+      .filter((e) => e.status !== 'Reading' && (e.status as string) !== 'Watching' && e.manga && hasUsableImage(e.manga))
       .map((e) => e.manga!);
   }, [user, library]);
 
-  // 6. Dynamic Hero Resolution using Priority Rules:
-  // Priority: 1. Currently Reading -> 2. Recently Searched -> 3. Favorites -> 4. Library -> 5. Default Naruto
-  const { heroManga, heroBadge, isReadingHero } = useMemo(() => {
-    if (currentlyReading.length > 0 && currentlyReading[0].manga) {
-      return {
-        heroManga: currentlyReading[0].manga,
-        heroBadge: 'Continue Reading',
-        isReadingHero: true
-      };
+  // 5. Check if hero sources are evaluating to prevent flashing default Naruto
+  const isHeroResolving =
+    authLoading ||
+    (user ? libraryLoading : false) ||
+    (user && favorites.length > 0 && favoriteMangaList.length === 0 && loadingFavorites);
+
+  // 6. STRICT HERO SELECTION PRIORITY RULES:
+  // PRIORITY 1: User's favorites (newest favorite first)
+  // PRIORITY 2: User's Reading / Watching library items (newest first, only if no favorites)
+  // PRIORITY 3: Default Home (Naruto + 4-5 recent released movies)
+  const heroSlides = useMemo<HeroSlideItem[]>(() => {
+    // PRIORITY 1 — FAVORITES
+    if (user && favoriteMangaList.length > 0) {
+      return favoriteMangaList.map((m, idx) => ({
+        manga: m,
+        badge: idx === 0 ? 'From Your Favorites' : 'Favorite',
+        isReading: false
+      }));
     }
 
-    if (recentSearchManga.length > 0 && recentSearchManga[0]) {
-      return {
-        heroManga: recentSearchManga[0],
-        heroBadge: latestSearchQuery ? `Based on Search: ${latestSearchQuery}` : 'Recently Searched',
-        isReadingHero: false
-      };
+    // PRIORITY 2 — LIBRARY (Only Reading / Watching)
+    if (user && currentlyReading.length > 0) {
+      return currentlyReading.map((entry, idx) => {
+        const manga = entry.manga!;
+        const isReadingMediaItem = isReadingMedia(manga.type);
+        const badgeLabel = idx === 0
+          ? (isReadingMediaItem ? 'Continue Reading' : 'Continue Watching')
+          : (isReadingMediaItem ? 'Reading' : 'Watching');
+        return {
+          manga,
+          badge: badgeLabel,
+          isReading: true
+        };
+      });
     }
 
-    if (user && favoriteMangaList.length > 0 && favoriteMangaList[0]) {
-      return {
-        heroManga: favoriteMangaList[0],
-        heroBadge: 'From Your Favorites',
-        isReadingHero: false
-      };
+    // PRIORITY 3 — DEFAULT HOME (Naruto + 4-5 genuinely recent released movies)
+    const slides: HeroSlideItem[] = [];
+    const seenIds = new Set<string>();
+
+    if (defaultNaruto) {
+      slides.push({
+        manga: defaultNaruto,
+        badge: 'Featured',
+        isReading: false
+      });
+      seenIds.add(defaultNaruto.id.toString());
+      if (defaultNaruto.anilist_id) seenIds.add(defaultNaruto.anilist_id.toString());
     }
 
-    if (user && otherLibraryMangas.length > 0 && otherLibraryMangas[0]) {
-      return {
-        heroManga: otherLibraryMangas[0],
-        heroBadge: 'In Your Library',
-        isReadingHero: false
-      };
-    }
+    multiRegionalMovies.forEach((m) => {
+      if (!m || !m.id || seenIds.has(m.id.toString())) return;
+      if (m.anilist_id && seenIds.has(m.anilist_id.toString())) return;
+      seenIds.add(m.id.toString());
 
-    return {
-      heroManga: defaultNaruto,
-      heroBadge: 'Featured',
-      isReadingHero: false
-    };
-  }, [currentlyReading, recentSearchManga, latestSearchQuery, user, favoriteMangaList, otherLibraryMangas, defaultNaruto]);
+      let regionBadge = 'Recent Movie';
+      const genres = m.genres || [];
+      const author = m.author || '';
+
+      if (m.type === 'Anime' || genres.includes('Animation') || genres.includes('Anime')) {
+        regionBadge = 'Anime Premiere';
+      } else if (author.includes('Bollywood') || author.includes('Hindi')) {
+        regionBadge = 'Bollywood Release';
+      } else if (
+        author.includes('South Indian') ||
+        author.includes('Telugu') ||
+        author.includes('Tamil') ||
+        author.includes('Malayalam') ||
+        author.includes('Kannada')
+      ) {
+        regionBadge = 'South Indian Cinema';
+      } else if (author.includes('Hollywood')) {
+        regionBadge = 'Hollywood Release';
+      } else if (m.release_year && m.release_year >= 2023) {
+        regionBadge = 'Recent Premiere';
+      }
+
+      slides.push({
+        manga: m,
+        badge: regionBadge,
+        isReading: false
+      });
+    });
+
+    return slides;
+  }, [user, favoriteMangaList, currentlyReading, defaultNaruto, multiRegionalMovies]);
 
   return (
-    <div className="flex flex-col gap-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-20">
-      {/* 1. Hero Featured / Personalized Section */}
-      {heroManga && (
-        <section className="relative rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl z-10 overflow-hidden">
-          {/* Background Banner with Gradient Overlay */}
-          <div className="absolute inset-0 z-0 overflow-hidden rounded-2xl">
-            {heroManga.banner_url ? (
-              <img
-                src={heroManga.banner_url}
-                alt={getDisplayTitle(heroManga)}
-                loading="eager"
-                decoding="async"
-                className="w-full h-full object-cover opacity-25 filter blur-xs"
-              />
-            ) : (
-              <img
-                src={heroManga.cover_url}
-                alt={getDisplayTitle(heroManga)}
-                loading="eager"
-                decoding="async"
-                className="w-full h-full object-cover opacity-20 filter blur-md"
-              />
-            )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/70 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-r from-black via-black/80 to-transparent" />
-          </div>
+    <div className="flex flex-col gap-8 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-20">
+      {/* 1. Hero Featured / Multi-Regional Swipeable Section */}
+      {isHeroResolving ? (
+        <section className="relative rounded-2xl border border-zinc-800 bg-zinc-900 shadow-2xl z-20 overflow-hidden animate-pulse">
+          <div className="p-6 sm:p-8 md:p-10 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8">
+            {/* Cover Skeleton */}
+            <div className="w-36 sm:w-48 md:w-52 aspect-[2/3] shrink-0 rounded-xl bg-zinc-800 border border-zinc-700/60 shadow-2xl" />
 
-          {/* Hero Content */}
-          <div className="relative z-10 p-6 sm:p-8 md:p-10 flex flex-col md:flex-row items-center md:items-end gap-6 md:gap-8">
-            {/* Cover Card */}
-            <div
-              onClick={() => onSelectManga(heroManga)}
-              className="w-36 sm:w-48 md:w-52 aspect-[2/3] shrink-0 rounded-xl overflow-hidden border border-zinc-700/80 shadow-2xl cursor-pointer hover:scale-102 transition-transform"
-            >
-              <ImageWithFallback
-                src={heroManga.cover_url}
-                alt={getDisplayTitle(heroManga)}
-                aspectRatio="aspect-[2/3]"
-                priority={true}
-              />
-            </div>
-
-            {/* Meta and Description */}
-            <div className="flex flex-col items-center md:items-start text-center md:text-left gap-2.5 flex-1 min-w-0">
-              <div className="flex items-center gap-2 flex-wrap justify-center md:justify-start">
-                <span
-                  className={`text-[10px] px-2.5 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                    isReadingHero
-                      ? 'bg-sky-500/25 text-sky-300 border border-sky-500/40'
-                      : heroBadge.includes('Favorites')
-                      ? 'bg-rose-500/25 text-rose-300 border border-rose-500/40'
-                      : heroBadge.includes('Search')
-                      ? 'bg-indigo-500/25 text-indigo-300 border border-indigo-500/40'
-                      : heroBadge.includes('Library')
-                      ? 'bg-amber-500/25 text-amber-300 border border-amber-500/40'
-                      : 'bg-sky-500/20 text-sky-400'
-                  }`}
-                >
-                  {heroBadge}
-                </span>
-
-                <span className="text-[10px] px-2 py-0.5 bg-zinc-800 text-zinc-300 rounded-full font-bold uppercase tracking-wider">
-                  {heroManga.type}
-                </span>
-
-                <span className="text-[10px] px-2 py-0.5 bg-emerald-500/15 text-emerald-400 rounded-full font-bold uppercase tracking-wider">
-                  {heroManga.status}
-                </span>
-
-                {heroManga.score && heroManga.score > 0 ? (
-                  <span className="text-[10px] px-2 py-0.5 bg-amber-500/15 text-amber-300 rounded-full font-bold uppercase tracking-wider">
-                    ★ {heroManga.score}%
-                  </span>
-                ) : null}
+            {/* Content Skeleton */}
+            <div className="flex flex-col items-center md:items-start text-center md:text-left gap-3 flex-1 min-w-0 w-full">
+              {/* Badges Skeleton */}
+              <div className="flex items-center gap-2">
+                <div className="h-5 w-28 rounded-full bg-zinc-800" />
+                <div className="h-5 w-16 rounded-full bg-zinc-800" />
+                <div className="h-5 w-20 rounded-full bg-zinc-800" />
               </div>
 
-              <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-zinc-100 tracking-tight leading-tight line-clamp-2">
-                {getDisplayTitle(heroManga)}
-              </h1>
+              {/* Title Skeleton */}
+              <div className="h-8 sm:h-9 w-3/4 max-w-md rounded-lg bg-zinc-800" />
 
-              {/* Genres */}
-              <div className="flex flex-wrap gap-1 justify-center md:justify-start">
-                {heroManga.genres?.slice(0, 5).map((g) => (
-                  <span
-                    key={g}
-                    className="text-[10px] px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-zinc-800 font-medium"
-                  >
-                    {g}
-                  </span>
-                ))}
+              {/* Genres Skeleton */}
+              <div className="flex gap-1.5">
+                <div className="h-4 w-14 rounded bg-zinc-800" />
+                <div className="h-4 w-16 rounded bg-zinc-800" />
+                <div className="h-4 w-12 rounded bg-zinc-800" />
               </div>
 
-              <p className="text-xs text-zinc-400 line-clamp-2 md:line-clamp-3 max-w-2xl leading-relaxed">
-                {heroManga.description}
-              </p>
+              {/* Description Skeleton */}
+              <div className="space-y-1.5 w-full max-w-xl">
+                <div className="h-3 w-full rounded bg-zinc-800" />
+                <div className="h-3 w-5/6 rounded bg-zinc-800" />
+                <div className="h-3 w-2/3 rounded bg-zinc-800" />
+              </div>
 
-              {/* Progress if currently reading hero */}
-              {isReadingHero && (
-                <div className="w-full max-w-md my-1 p-2.5 rounded-xl bg-black/40 border border-zinc-800/80">
-                  <ProgressBar
-                    current={getProgressForManga(heroManga.id)?.chapters_read || 0}
-                    total={heroManga.chapters}
-                    size="sm"
-                    showLabels={true}
-                    unitLabel="Ch."
-                  />
-                </div>
-              )}
-
-              {/* Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2.5 mt-2">
-                <button
-                  type="button"
-                  onClick={() => onSelectManga(heroManga)}
-                  className="bg-white text-black text-xs font-bold px-5 py-2 rounded-lg hover:bg-sky-400 transition-colors shadow-sm cursor-pointer"
-                >
-                  View Details
-                </button>
-
-                <StatusSelector manga={heroManga} size="md" />
-
-                <button
-                  type="button"
-                  onClick={() => toggleFavorite(heroManga)}
-                  className={`p-2 rounded-lg border transition-all cursor-pointer ${
-                    isMangaFavorite(heroManga.id)
-                      ? 'bg-rose-500/20 text-rose-400 border-rose-500/40'
-                      : 'bg-zinc-800/80 text-zinc-300 border-zinc-700 hover:bg-zinc-800'
-                  }`}
-                  aria-label="Toggle Favorite"
-                >
-                  <Heart className={`w-4 h-4 ${isMangaFavorite(heroManga.id) ? 'fill-current' : ''}`} />
-                </button>
+              {/* Action Buttons Skeleton */}
+              <div className="flex items-center gap-2.5 mt-2">
+                <div className="h-8 w-28 rounded-lg bg-zinc-800" />
+                <div className="h-8 w-32 rounded-lg bg-zinc-800" />
+                <div className="h-8 w-8 rounded-lg bg-zinc-800" />
               </div>
             </div>
           </div>
         </section>
-      )}
+      ) : heroSlides.length > 0 ? (
+        <HeroSlider
+          slides={heroSlides}
+          onSelectManga={onSelectManga}
+          getProgressForManga={getProgressForManga}
+          toggleFavorite={toggleFavorite}
+          isMangaFavorite={isMangaFavorite}
+        />
+      ) : null}
 
-      {/* 2. Reading Statistics Bar (Only for authenticated users with activity) */}
+      {/* 2. Activity Statistics Bar (Only for authenticated users with activity) */}
       {user && (stats.total > 0 || stats.favorites > 0) && (
         <section className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
           <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-xl p-3 flex flex-col">
@@ -380,11 +343,11 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
             <span className="text-lg font-black text-zinc-100 mt-0.5">{stats.total}</span>
           </div>
           <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-xl p-3 flex flex-col">
-            <span className="text-[11px] text-sky-400 font-medium">Reading</span>
+            <span className="text-[11px] text-sky-400 font-medium">In Progress</span>
             <span className="text-lg font-black text-sky-400 mt-0.5">{stats.reading}</span>
           </div>
           <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-xl p-3 flex flex-col">
-            <span className="text-[11px] text-amber-400 font-medium">Plan to Read</span>
+            <span className="text-[11px] text-amber-400 font-medium">Want to Watch / Read</span>
             <span className="text-lg font-black text-amber-300 mt-0.5">{stats.pending}</span>
           </div>
           <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-xl p-3 flex flex-col">
@@ -396,19 +359,19 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
             <span className="text-lg font-black text-pink-400 mt-0.5">{stats.favorites}</span>
           </div>
           <div className="bg-zinc-900/50 border border-zinc-800/60 rounded-xl p-3 flex flex-col">
-            <span className="text-[11px] text-zinc-400 font-medium">Chapters Read</span>
+            <span className="text-[11px] text-zinc-400 font-medium">Progress Logged</span>
             <span className="text-lg font-black text-zinc-100 mt-0.5">{stats.chaptersRead}</span>
           </div>
         </section>
       )}
 
-      {/* 3. Continue Reading Section (Only displayed if user is currently reading titles) */}
+      {/* 3. Continue Watching / Reading Section (Only displayed if user has active titles) */}
       {currentlyReading.length > 0 && (
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-sky-400" />
-              <h2 className="text-base font-bold text-zinc-100 tracking-tight">Continue Reading</h2>
+              <Play className="w-4 h-4 text-sky-400" />
+              <h2 className="text-base font-bold text-zinc-100 tracking-tight">Continue Watching & Reading</h2>
             </div>
             <button
               onClick={() => navigate('library')}
@@ -423,6 +386,7 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
               const manga = entry.manga!;
               const prog = getProgressForManga(manga.id);
               const chaptersRead = prog?.chapters_read || 0;
+              const reliableCover = getReliableCoverUrl(manga);
 
               return (
                 <div
@@ -432,7 +396,7 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
                 >
                   <div className="w-12 aspect-[2/3] shrink-0 rounded overflow-hidden border border-zinc-800">
                     <ImageWithFallback
-                      src={manga.cover_url}
+                      src={reliableCover}
                       alt={getDisplayTitle(manga)}
                       aspectRatio="aspect-[2/3]"
                     />
@@ -452,7 +416,7 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
                         total={manga.chapters}
                         size="sm"
                         showLabels={true}
-                        unitLabel="Ch."
+                        unitLabel={isReadingMedia(manga.type) ? 'Ch.' : 'Ep.'}
                       />
                     </div>
                   </div>
@@ -463,34 +427,7 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
         </section>
       )}
 
-      {/* 4. Based on Recent Searches Section (Only displayed if user searched recently) */}
-      {recentSearchManga.length > 0 && latestSearchQuery && (
-        <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <SearchIcon className="w-4 h-4 text-indigo-400" />
-              <h2 className="text-base font-bold text-zinc-100 tracking-tight">
-                Based on your search: <span className="text-indigo-400">"{latestSearchQuery}"</span>
-              </h2>
-            </div>
-            <button
-              onClick={() => navigate('search')}
-              className="text-xs text-indigo-400 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
-            >
-              Search More <ArrowRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-
-          <MangaGrid
-            items={recentSearchManga}
-            loading={false}
-            skeletonCount={6}
-            onSelectManga={onSelectManga}
-          />
-        </section>
-      )}
-
-      {/* 5. From Your Favorites Section (Only displayed if authenticated user has favorites) */}
+      {/* 4. From Your Favorites Section (Only displayed if authenticated user has favorites) */}
       {user && favoriteMangaList.length > 0 && (
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
@@ -515,13 +452,13 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
         </section>
       )}
 
-      {/* 6. In Your Library Section (Only displayed if authenticated user has other organized titles) */}
+      {/* 5. In Your Library Section (Only displayed if authenticated user has other organized titles) */}
       {user && otherLibraryMangas.length > 0 && (
         <section className="flex flex-col gap-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bookmark className="w-4 h-4 text-amber-400" />
-              <h2 className="text-base font-bold text-zinc-100 tracking-tight">In Your Reading List</h2>
+              <h2 className="text-base font-bold text-zinc-100 tracking-tight">In Your Library</h2>
             </div>
             <button
               onClick={() => navigate('library')}
@@ -540,7 +477,7 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
         </section>
       )}
 
-      {/* 7. Trending Manga Section */}
+      {/* 6. Trending Section */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -563,7 +500,7 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
         />
       </section>
 
-      {/* 8. Popular Manga Section */}
+      {/* 7. Popular Section */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -586,7 +523,7 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
         />
       </section>
 
-      {/* 9. Recently Updated Section */}
+      {/* 8. Recently Updated Section */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

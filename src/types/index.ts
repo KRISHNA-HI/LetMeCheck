@@ -1,4 +1,24 @@
-export type MangaType = 'Manga' | 'Manhwa' | 'Manhua' | 'Light Novel' | 'One-shot' | 'All';
+// ==========================================================
+// LetMeCheck Core Types
+// Re-exports Universal Entertainment Types + Manga Compatibility
+// ==========================================================
+
+export * from './content';
+
+export type MangaType =
+  | 'Manga'
+  | 'Manhwa'
+  | 'Manhua'
+  | 'Light Novel'
+  | 'One-shot'
+  | 'Anime'
+  | 'Movie'
+  | 'TV Series'
+  | 'Web Series'
+  | 'Drama'
+  | 'OVA'
+  | 'Special'
+  | 'All';
 
 export type MangaStatus = 'Ongoing' | 'Completed' | 'Hiatus' | 'Cancelled' | 'All';
 
@@ -11,6 +31,9 @@ export type MaterialType =
   | 'Light Novel'
   | 'Anime'
   | 'Movie'
+  | 'TV Series'
+  | 'Web Series'
+  | 'Drama'
   | 'OVA'
   | 'Special'
   | 'One-shot'
@@ -44,7 +67,7 @@ export interface Manga {
   title_details?: MangaTitleVariants;
   alternative_titles?: string[];
   description: string;
-  type: 'Manga' | 'Manhwa' | 'Manhua' | 'Light Novel' | 'One-shot';
+  type: Exclude<MangaType, 'All'>;
   status: 'Ongoing' | 'Completed' | 'Hiatus' | 'Cancelled';
   author?: string;
   artist?: string;

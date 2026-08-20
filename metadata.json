@@ -1,6 +1,6 @@
 {
   "name": "LetMeCheck",
-  "description": "Free manga, manhwa, and manhua catalog, material guide, and personal reading tracker.",
+  "description": "Unified entertainment catalog and tracking platform for Movies, TV Series, Web Series, and Anime with franchise watch orders and watchlist tracking.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

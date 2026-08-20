@@ -1,20 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { Search as SearchIcon, X, Sparkles, BookOpen, Clock } from 'lucide-react';
+import { Search as SearchIcon, X, Sparkles, Clock, Film, Tv, Play, BookOpen, Layers } from 'lucide-react';
 import { Manga } from '../types';
-import { mangaApi } from '../services/mangaApi';
+import { ContentType } from '../types/content';
+import { contentService, contentItemToManga } from '../services/contentService';
 import { localStorageService } from '../services/storage';
 import { MangaGrid } from '../components/manga/MangaGrid';
 import { useDebounce } from '../hooks/useDebounce';
 import { SAMPLE_MANGA } from '../data/sampleManga';
+import { hasUsableImage } from '../utils/formatters';
 
 interface SearchProps {
   initialQuery?: string;
   onSelectManga: (manga: Manga) => void;
 }
 
+type FilterOption = 'all' | 'movie' | 'tv_series' | 'anime' | 'manga';
+
+const CONTENT_TYPE_TABS: { id: FilterOption; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
+  { id: 'all', label: 'All Media', icon: Layers },
+  { id: 'movie', label: 'Movies', icon: Film },
+  { id: 'tv_series', label: 'TV Shows', icon: Tv },
+  { id: 'anime', label: 'Anime', icon: Play },
+  { id: 'manga', label: 'Manga / Manhwa', icon: BookOpen }
+];
+
 export const Search: React.FC<SearchProps> = ({ initialQuery = '', onSelectManga }) => {
   const [searchTerm, setSearchTerm] = useState<string>(initialQuery);
-  const debouncedTerm = useDebounce(searchTerm, 400);
+  const [selectedType, setSelectedType] = useState<FilterOption>('all');
+  const debouncedTerm = useDebounce(searchTerm, 350);
 
   const [results, setResults] = useState<Manga[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
@@ -44,33 +57,42 @@ export const Search: React.FC<SearchProps> = ({ initialQuery = '', onSelectManga
       setLoading(true);
       setHasSearched(true);
       try {
-        const data = await mangaApi.searchManga(q, 1, 30);
-        setResults(data.items);
-        if (data.items.length > 0) {
+        const filterType: ContentType | undefined =
+          selectedType === 'all' ? undefined : (selectedType as ContentType);
+
+        const searchRes = await contentService.searchContent(q, {
+          content_type: filterType,
+          per_page: 30
+        });
+
+        const mapped = searchRes.items.map(contentItemToManga);
+        setResults(mapped);
+
+        if (mapped.length > 0) {
           const updated = localStorageService.addRecentSearch(q);
           setRecentSearches(updated);
         }
       } catch (err) {
-        console.warn('Search error:', err);
+        console.warn('Unified search error:', err);
       } finally {
         setLoading(false);
       }
     };
 
     runSearch();
-  }, [debouncedTerm]);
+  }, [debouncedTerm, selectedType]);
 
   const quickSearchTags = [
-    'Solo Leveling',
-    'Berserk',
-    'Frieren',
+    'Inception',
+    'Stranger Things',
+    'Demon Slayer',
+    'RRR',
+    'Interstellar',
+    'Breaking Bad',
     'One Piece',
-    'Chainsaw Man',
-    'Dandadan',
-    'Omniscient Reader',
-    'Tower of God',
-    'Jujutsu Kaisen',
-    'Vagabond'
+    'Solo Leveling',
+    'Attack on Titan',
+    'Vikram'
   ];
 
   return (
@@ -79,17 +101,17 @@ export const Search: React.FC<SearchProps> = ({ initialQuery = '', onSelectManga
       <div className="flex flex-col items-center text-center gap-2.5 max-w-2xl mx-auto w-full pt-2 pb-2">
         <h1 className="text-xl sm:text-2xl font-black text-zinc-100 flex items-center gap-2">
           <SearchIcon className="w-5 h-5 text-sky-400" />
-          <span>Search Manga & Media</span>
+          <span>Search</span>
         </h1>
         <p className="text-xs text-zinc-400">
-          Find any title across Japanese manga, Korean manhwa, Chinese manhua, and light novels
+          Discover movies, TV series, anime, manga, and regional cinema across global metadata providers
         </p>
 
         {/* Search Bar Input */}
         <div className="relative w-full mt-2">
           <input
             type="text"
-            placeholder="Type a title (e.g. Solo Leveling, ベルセルク, Frieren)..."
+            placeholder="Search movies, series, anime, manga (e.g. Inception, Stranger Things, Demon Slayer, RRR)..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             autoFocus
@@ -104,6 +126,28 @@ export const Search: React.FC<SearchProps> = ({ initialQuery = '', onSelectManga
               <X className="w-4 h-4" />
             </button>
           )}
+        </div>
+
+        {/* Content Type Filter Pills */}
+        <div className="flex flex-wrap items-center justify-center gap-1.5 mt-2">
+          {CONTENT_TYPE_TABS.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = selectedType === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => setSelectedType(tab.id)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors cursor-pointer ${
+                  isActive
+                    ? 'bg-sky-500 text-zinc-950 font-bold shadow-md shadow-sky-500/20'
+                    : 'bg-zinc-900/90 text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 border border-zinc-800'
+                }`}
+              >
+                <Icon className="w-3.5 h-3.5" />
+                <span>{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         {/* Recent Searches (if any) */}
@@ -147,13 +191,18 @@ export const Search: React.FC<SearchProps> = ({ initialQuery = '', onSelectManga
           <div className="flex items-center justify-between mb-4 pb-2 border-b border-zinc-800">
             <span className="text-xs font-bold text-zinc-300">
               {loading
-                ? 'Searching database...'
+                ? 'Searching entertainment databases...'
                 : `Found ${results.length} result${results.length === 1 ? '' : 's'} for "${debouncedTerm}"`}
             </span>
+            {selectedType !== 'all' && (
+              <span className="text-xs text-sky-400 font-medium capitalize">
+                Filtering by: {selectedType.replace('_', ' ')}
+              </span>
+            )}
           </div>
         )}
 
-        {/* If no search entered yet, show popular picks as suggestions */}
+        {/* If no search entered yet, show starter suggestions */}
         {!hasSearched && (
           <div className="flex flex-col gap-3">
             <div className="flex items-center gap-2 text-xs font-bold text-zinc-300">
@@ -161,7 +210,7 @@ export const Search: React.FC<SearchProps> = ({ initialQuery = '', onSelectManga
               <span>Recommended Starters</span>
             </div>
             <MangaGrid
-              items={SAMPLE_MANGA}
+              items={SAMPLE_MANGA.filter(hasUsableImage)}
               onSelectManga={onSelectManga}
             />
           </div>
@@ -173,7 +222,7 @@ export const Search: React.FC<SearchProps> = ({ initialQuery = '', onSelectManga
             loading={loading}
             skeletonCount={12}
             onSelectManga={onSelectManga}
-            emptyMessage={`No titles found matching "${debouncedTerm}". Check spelling or try a different term.`}
+            emptyMessage={`No titles found matching "${debouncedTerm}" in the selected category. Check spelling or try searching across All Media.`}
           />
         )}
       </div>

@@ -1,0 +1,341 @@
+[
+  {
+    "id": "run_1787223096401_5011n",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T10:51:36.401Z",
+    "completed_at": "2026-08-20T10:51:53.598Z",
+    "duration_ms": 17197,
+    "scanned_count": 20,
+    "inserted_count": 20,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T10:51:36.401Z] Starting manual TMDB catalog ingestion run: run_1787223096401_5011n",
+      "Balanced region queue across 1 industries (Quota: 1000, processed today: 229).",
+      "Fetching Kollywood (movie) from TMDB page 2...",
+      "Processed Kollywood (movie) page 2: 20 inserted, 0 updated.",
+      "Ingestion completed with status SUCCESS: 20 scanned, 20 inserted, 0 updated, in 17197ms."
+    ]
+  },
+  {
+    "id": "run_1787221762452_7hyrb",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T10:29:22.452Z",
+    "completed_at": "2026-08-20T10:29:40.081Z",
+    "duration_ms": 17629,
+    "scanned_count": 20,
+    "inserted_count": 20,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T10:29:22.452Z] Starting manual TMDB catalog ingestion run: run_1787221762452_7hyrb",
+      "Balanced region queue across 9 industries (Quota: 1000, processed today: 151).",
+      "Fetching Tollywood (movie) from TMDB page 3...",
+      "Processed Tollywood (movie) page 3: 20 inserted, 0 updated.",
+      "Ingestion completed with status SUCCESS: 20 scanned, 20 inserted, 0 updated, in 17629ms."
+    ]
+  },
+  {
+    "id": "run_1787216545937_sbezc",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T09:02:25.937Z",
+    "completed_at": "2026-08-20T09:02:42.360Z",
+    "duration_ms": 16423,
+    "scanned_count": 20,
+    "inserted_count": 20,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T09:02:25.937Z] Starting manual TMDB catalog ingestion run: run_1787216545937_sbezc",
+      "Balanced region queue across 9 industries (Quota: 1000, processed today: 131).",
+      "Fetching Tollywood (movie) from TMDB page 2...",
+      "Processed Tollywood (movie) page 2: 20 inserted, 0 updated.",
+      "Ingestion completed with status SUCCESS: 20 scanned, 20 inserted, 0 updated, in 16423ms."
+    ]
+  },
+  {
+    "id": "run_1787216511444_hu5dp",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T09:01:51.444Z",
+    "completed_at": "2026-08-20T09:02:25.180Z",
+    "duration_ms": 33736,
+    "scanned_count": 40,
+    "inserted_count": 20,
+    "updated_count": 20,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T09:01:51.444Z] Starting manual TMDB catalog ingestion run: run_1787216511444_hu5dp",
+      "Balanced region queue across 9 industries (Quota: 1000, processed today: 111).",
+      "Fetching Bollywood (movie) from TMDB page 2...",
+      "Processed Bollywood (movie) page 2: 0 inserted, 20 updated.",
+      "Fetching Bollywood (tv) from TMDB page 1...",
+      "Processed Bollywood (tv) page 1: 20 inserted, 0 updated.",
+      "Ingestion completed with status SUCCESS: 40 scanned, 20 inserted, 20 updated, in 33736ms."
+    ]
+  },
+  {
+    "id": "run_1787215958236_hmo3r",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:52:38.236Z",
+    "completed_at": "2026-08-20T08:53:16.624Z",
+    "duration_ms": 38388,
+    "scanned_count": 40,
+    "inserted_count": 40,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:52:38.236Z] Starting manual TMDB catalog ingestion run: run_1787215958236_hmo3r",
+      "Region priorities calculated across 9 industries (continuous growth mode).",
+      "Fetching Hollywood (movie) from TMDB page 6...",
+      "Processed Hollywood (movie) page 6: 20 inserted, 0 updated.",
+      "Fetching Hollywood (tv) from TMDB page 2...",
+      "Processed Hollywood (tv) page 2: 20 inserted, 0 updated.",
+      "Ingestion completed with status SUCCESS: 40 scanned, 40 inserted, 0 updated, in 38388ms."
+    ]
+  },
+  {
+    "id": "run_1787214874244_n0v5g",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:34:34.244Z",
+    "completed_at": "2026-08-20T08:34:35.474Z",
+    "duration_ms": 1230,
+    "scanned_count": 40,
+    "inserted_count": 9,
+    "updated_count": 31,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:34:34.244Z] Starting manual TMDB catalog ingestion run: run_1787214874244_n0v5g",
+      "Region priorities calculated across 1 industries (continuous growth mode).",
+      "Fetching Anime Industry (movie) from TMDB page 1...",
+      "Processed Anime Industry (movie) page 1: 7 inserted, 13 updated.",
+      "Fetching Anime Industry (tv_series) from TMDB page 1...",
+      "Processed Anime Industry (tv_series) page 1: 2 inserted, 18 updated.",
+      "[WARN] Supabase direct sync error: supabase.from(...).upsert(...).catch is not a function",
+      "Ingestion completed with status SUCCESS: 40 scanned, 9 inserted, 31 updated, in 1230ms."
+    ]
+  },
+  {
+    "id": "run_1787214873011_u3560",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:34:33.011Z",
+    "completed_at": "2026-08-20T08:34:34.243Z",
+    "duration_ms": 1232,
+    "scanned_count": 40,
+    "inserted_count": 40,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:34:33.011Z] Starting manual TMDB catalog ingestion run: run_1787214873011_u3560",
+      "Region priorities calculated across 1 industries (continuous growth mode).",
+      "Fetching Japanese Cinema & J-Drama (movie) from TMDB page 1...",
+      "Processed Japanese Cinema & J-Drama (movie) page 1: 20 inserted, 0 updated.",
+      "Fetching Japanese Cinema & J-Drama (tv_series) from TMDB page 1...",
+      "Processed Japanese Cinema & J-Drama (tv_series) page 1: 20 inserted, 0 updated.",
+      "[WARN] Supabase direct sync error: supabase.from(...).upsert(...).catch is not a function",
+      "Ingestion completed with status SUCCESS: 40 scanned, 40 inserted, 0 updated, in 1232ms."
+    ]
+  },
+  {
+    "id": "run_1787214871786_49iju",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:34:31.786Z",
+    "completed_at": "2026-08-20T08:34:33.010Z",
+    "duration_ms": 1224,
+    "scanned_count": 40,
+    "inserted_count": 39,
+    "updated_count": 1,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:34:31.786Z] Starting manual TMDB catalog ingestion run: run_1787214871786_49iju",
+      "Region priorities calculated across 1 industries (continuous growth mode).",
+      "Fetching Korean Cinema & K-Drama (movie) from TMDB page 2...",
+      "Processed Korean Cinema & K-Drama (movie) page 2: 19 inserted, 1 updated.",
+      "Fetching Korean Cinema & K-Drama (tv_series) from TMDB page 1...",
+      "Processed Korean Cinema & K-Drama (tv_series) page 1: 20 inserted, 0 updated.",
+      "[WARN] Supabase direct sync error: supabase.from(...).upsert(...).catch is not a function",
+      "Ingestion completed with status SUCCESS: 40 scanned, 39 inserted, 1 updated, in 1224ms."
+    ]
+  },
+  {
+    "id": "run_1787214870425_25rjm",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:34:30.425Z",
+    "completed_at": "2026-08-20T08:34:31.785Z",
+    "duration_ms": 1360,
+    "scanned_count": 40,
+    "inserted_count": 40,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:34:30.425Z] Starting manual TMDB catalog ingestion run: run_1787214870425_25rjm",
+      "Region priorities calculated across 1 industries (continuous growth mode).",
+      "Fetching Sandalwood (movie) from TMDB page 1...",
+      "Processed Sandalwood (movie) page 1: 20 inserted, 0 updated.",
+      "Fetching Sandalwood (tv_series) from TMDB page 1...",
+      "Processed Sandalwood (tv_series) page 1: 20 inserted, 0 updated.",
+      "[WARN] Supabase direct sync error: supabase.from(...).upsert(...).catch is not a function",
+      "Ingestion completed with status SUCCESS: 40 scanned, 40 inserted, 0 updated, in 1360ms."
+    ]
+  },
+  {
+    "id": "run_1787214869159_dasb3",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:34:29.159Z",
+    "completed_at": "2026-08-20T08:34:30.424Z",
+    "duration_ms": 1265,
+    "scanned_count": 40,
+    "inserted_count": 33,
+    "updated_count": 7,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:34:29.159Z] Starting manual TMDB catalog ingestion run: run_1787214869159_dasb3",
+      "Region priorities calculated across 1 industries (continuous growth mode).",
+      "Fetching Mollywood (movie) from TMDB page 2...",
+      "Processed Mollywood (movie) page 2: 16 inserted, 4 updated.",
+      "Fetching Mollywood (tv_series) from TMDB page 2...",
+      "Processed Mollywood (tv_series) page 2: 17 inserted, 3 updated.",
+      "[WARN] Supabase direct sync error: supabase.from(...).upsert(...).catch is not a function",
+      "Ingestion completed with status SUCCESS: 40 scanned, 33 inserted, 7 updated, in 1265ms."
+    ]
+  },
+  {
+    "id": "run_1787214867901_l2yt8",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:34:27.901Z",
+    "completed_at": "2026-08-20T08:34:29.159Z",
+    "duration_ms": 1258,
+    "scanned_count": 40,
+    "inserted_count": 40,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:34:27.901Z] Starting manual TMDB catalog ingestion run: run_1787214867901_l2yt8",
+      "Region priorities calculated across 1 industries (continuous growth mode).",
+      "Fetching Kollywood (movie) from TMDB page 1...",
+      "Processed Kollywood (movie) page 1: 20 inserted, 0 updated.",
+      "Fetching Kollywood (tv_series) from TMDB page 1...",
+      "Processed Kollywood (tv_series) page 1: 20 inserted, 0 updated.",
+      "[WARN] Supabase direct sync error: supabase.from(...).upsert(...).catch is not a function",
+      "Ingestion completed with status SUCCESS: 40 scanned, 40 inserted, 0 updated, in 1258ms."
+    ]
+  },
+  {
+    "id": "run_1787214866664_k1par",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:34:26.664Z",
+    "completed_at": "2026-08-20T08:34:27.901Z",
+    "duration_ms": 1237,
+    "scanned_count": 40,
+    "inserted_count": 40,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:34:26.664Z] Starting manual TMDB catalog ingestion run: run_1787214866664_k1par",
+      "Region priorities calculated across 1 industries (continuous growth mode).",
+      "Fetching Tollywood (movie) from TMDB page 1...",
+      "Processed Tollywood (movie) page 1: 20 inserted, 0 updated.",
+      "Fetching Tollywood (tv_series) from TMDB page 1...",
+      "Processed Tollywood (tv_series) page 1: 20 inserted, 0 updated.",
+      "[WARN] Supabase direct sync error: supabase.from(...).upsert(...).catch is not a function",
+      "Ingestion completed with status SUCCESS: 40 scanned, 40 inserted, 0 updated, in 1237ms."
+    ]
+  },
+  {
+    "id": "run_1787214861961_4j3o0",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:34:21.961Z",
+    "completed_at": "2026-08-20T08:34:26.663Z",
+    "duration_ms": 4702,
+    "scanned_count": 40,
+    "inserted_count": 40,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:34:21.961Z] Starting manual TMDB catalog ingestion run: run_1787214861961_4j3o0",
+      "Region priorities calculated across 1 industries (continuous growth mode).",
+      "Fetching Bollywood (movie) from TMDB page 2...",
+      "Processed Bollywood (movie) page 2: 20 inserted, 0 updated.",
+      "Fetching Bollywood (tv_series) from TMDB page 1...",
+      "Processed Bollywood (tv_series) page 1: 20 inserted, 0 updated.",
+      "[WARN] Supabase direct sync error: supabase.from(...).upsert(...).catch is not a function",
+      "Ingestion completed with status SUCCESS: 40 scanned, 40 inserted, 0 updated, in 4702ms."
+    ]
+  },
+  {
+    "id": "run_1787214804825_25qo0",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-20T08:33:24.825Z",
+    "completed_at": "2026-08-20T08:33:30.101Z",
+    "duration_ms": 5276,
+    "scanned_count": 60,
+    "inserted_count": 60,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-20T08:33:24.825Z] Starting manual TMDB catalog ingestion run: run_1787214804825_25qo0",
+      "Region priorities calculated across 9 industries (continuous growth mode).",
+      "Fetching Hollywood (movie) from TMDB page 1...",
+      "Processed Hollywood (movie) page 1: 20 inserted, 0 updated.",
+      "Fetching Hollywood (tv_series) from TMDB page 1...",
+      "Processed Hollywood (tv_series) page 1: 20 inserted, 0 updated.",
+      "Fetching Bollywood (movie) from TMDB page 1...",
+      "Processed Bollywood (movie) page 1: 20 inserted, 0 updated.",
+      "[WARN] Supabase direct sync error: supabase.from(...).upsert(...).catch is not a function",
+      "Ingestion completed with status SUCCESS: 60 scanned, 60 inserted, 0 updated, in 5276ms."
+    ]
+  },
+  {
+    "id": "run_1787149167487_qtvip",
+    "run_type": "manual",
+    "status": "SUCCESS",
+    "started_at": "2026-08-19T14:19:27.487Z",
+    "completed_at": "2026-08-19T14:19:31.257Z",
+    "duration_ms": 3770,
+    "scanned_count": 20,
+    "inserted_count": 20,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-19T14:19:27.487Z] Starting manual TMDB catalog ingestion run: run_1787149167487_qtvip",
+      "Region priorities calculated across 9 target industries.",
+      "Fetching Korean Cinema & K-Drama (movie) from TMDB page 1...",
+      "Processed Korean Cinema & K-Drama (movie) page 1: 20 inserted, 0 updated.",
+      "Ingestion completed with status SUCCESS: 20 scanned, 20 inserted, 0 updated, in 3770ms."
+    ]
+  },
+  {
+    "id": "run_1787149150654_7arcu",
+    "run_type": "scheduled",
+    "status": "SUCCESS",
+    "started_at": "2026-08-19T14:19:10.654Z",
+    "completed_at": "2026-08-19T14:19:15.150Z",
+    "duration_ms": 4496,
+    "scanned_count": 40,
+    "inserted_count": 40,
+    "updated_count": 0,
+    "errors_count": 0,
+    "logs": [
+      "[2026-08-19T14:19:10.654Z] Starting scheduled TMDB catalog ingestion run: run_1787149150654_7arcu",
+      "Region priorities calculated across 9 target industries.",
+      "Fetching Mollywood (movie) from TMDB page 1...",
+      "Processed Mollywood (movie) page 1: 20 inserted, 0 updated.",
+      "Fetching Mollywood (tv_series) from TMDB page 1...",
+      "Processed Mollywood (tv_series) page 1: 20 inserted, 0 updated.",
+      "Ingestion completed with status SUCCESS: 40 scanned, 40 inserted, 0 updated, in 4496ms."
+    ]
+  }
+]

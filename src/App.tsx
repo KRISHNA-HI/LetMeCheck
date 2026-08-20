@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from './hooks/useAuth';
 import { useLibrary } from './hooks/useLibrary';
+import { isUserAdmin } from './utils/adminAuth';
 import { Manga } from './types';
 import { Home } from './pages/Home';
 import { Discover } from './pages/Discover';
@@ -28,28 +29,41 @@ import { MangaDetails } from './pages/MangaDetails';
 import { Login } from './pages/Login';
 import { Register } from './pages/Register';
 import { Profile } from './pages/Profile';
+import { AdminIngestion } from './pages/AdminIngestion';
 import { MobileNav } from './components/layout/MobileNav';
 import { ImageWithFallback } from './components/common/ImageWithFallback';
 
 function getRouteFromHash(): { route: string; query: string } {
   if (typeof window === 'undefined') return { route: 'home', query: '' };
-  const hash = window.location.hash.replace(/^#\/?/, '').trim();
-  if (!hash) return { route: 'home', query: '' };
+  const rawHash = window.location.hash.replace(/^#\/?/, '').trim();
+  if (!rawHash) return { route: 'home', query: '' };
 
-  if (hash.startsWith('search?q=')) {
-    const q = decodeURIComponent(hash.replace('search?q=', ''));
+  // If hash contains Supabase auth tokens, email confirmation fragments, or errors
+  if (
+    rawHash.includes('access_token=') ||
+    rawHash.includes('refresh_token=') ||
+    rawHash.includes('error_description=') ||
+    rawHash.startsWith('type=') ||
+    rawHash.includes('confirmation_token=')
+  ) {
+    return { route: 'home', query: '' };
+  }
+
+  if (rawHash.startsWith('search?q=')) {
+    const q = decodeURIComponent(rawHash.replace('search?q=', ''));
     return { route: 'search', query: q };
   }
 
-  return { route: hash, query: '' };
+  return { route: rawHash, query: '' };
 }
 
 export default function App() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const { library, favorites, stats, getProgressForManga } = useLibrary();
 
   // Navigation state initialized from URL hash
   const [currentRoute, setCurrentRoute] = useState<string>(() => getRouteFromHash().route);
+  const [routeHistory, setRouteHistory] = useState<string[]>([]);
   const [selectedManga, setSelectedManga] = useState<Manga | null>(null);
   const [searchQueryParam, setSearchQueryParam] = useState<string>(() => getRouteFromHash().query);
   const [navSearchInput, setNavSearchInput] = useState<string>('');
@@ -66,8 +80,24 @@ export default function App() {
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
 
+  // Strict Admin Route Protection: Redirect unauthorized users
+  useEffect(() => {
+    if (!authLoading && (currentRoute === 'admin/ingestion' || currentRoute === 'admin')) {
+      if (!isUserAdmin(user)) {
+        window.location.hash = '#/home';
+        setCurrentRoute('home');
+      }
+    }
+  }, [authLoading, currentRoute, user]);
+
   const navigate = useCallback((route: string) => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    setRouteHistory((prev) => {
+      const last = prev[prev.length - 1];
+      if (last === currentRoute) return prev;
+      return [...prev, currentRoute];
+    });
 
     if (route.startsWith('search?q=')) {
       const q = decodeURIComponent(route.replace('search?q=', ''));
@@ -79,6 +109,31 @@ export default function App() {
 
     window.location.hash = `#/${route}`;
     setCurrentRoute(route);
+  }, [currentRoute]);
+
+  const handleGoBack = useCallback(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    setRouteHistory((prev) => {
+      if (prev.length === 0) {
+        window.location.hash = '#/discover';
+        setCurrentRoute('discover');
+        return [];
+      }
+      const newHistory = [...prev];
+      const previousRoute = newHistory.pop()!;
+
+      if (previousRoute.startsWith('search?q=')) {
+        const q = decodeURIComponent(previousRoute.replace('search?q=', ''));
+        setSearchQueryParam(q);
+        window.location.hash = `#/${previousRoute}`;
+        setCurrentRoute('search');
+      } else {
+        window.location.hash = `#/${previousRoute}`;
+        setCurrentRoute(previousRoute);
+      }
+      return newHistory;
+    });
   }, []);
 
   const handleSelectManga = (manga: Manga) => {
@@ -306,7 +361,8 @@ export default function App() {
           {isDetailsRoute && detailsId ? (
             <MangaDetails
               mangaId={detailsId}
-              onBack={() => navigate('home')}
+              initialManga={selectedManga && String(selectedManga.id) === detailsId ? selectedManga : undefined}
+              onBack={handleGoBack}
               onSelectManga={handleSelectManga}
             />
           ) : currentRoute === 'home' ? (
@@ -325,6 +381,16 @@ export default function App() {
             <Register navigate={navigate} />
           ) : currentRoute === 'profile' ? (
             <Profile navigate={navigate} />
+          ) : currentRoute === 'admin/ingestion' || currentRoute === 'admin' ? (
+            authLoading ? (
+              <div className="flex items-center justify-center py-24">
+                <RefreshCw className="w-6 h-6 text-sky-400 animate-spin" />
+              </div>
+            ) : isUserAdmin(user) ? (
+              <AdminIngestion navigate={navigate} />
+            ) : (
+              <Home navigate={navigate} onSelectManga={handleSelectManga} />
+            )
           ) : (
             <Home navigate={navigate} onSelectManga={handleSelectManga} />
           )}

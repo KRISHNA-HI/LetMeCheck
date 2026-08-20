@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { UserProfile } from '../types';
 import { supabaseService, supabase } from '../services/supabase';
+import { localStorageService } from '../services/storage';
 
 interface AuthContextType {
   user: UserProfile | null;
@@ -9,8 +10,10 @@ interface AuthContextType {
   isConfigured: boolean;
   isSupabaseOnline: boolean;
   signIn: (email: string, pass: string) => Promise<{ success: boolean; error?: { message?: string } | string | null }>;
-  signUp: (email: string, pass: string, username: string) => Promise<{ success: boolean; error?: { message?: string } | string | null }>;
+  signUp: (email: string, pass: string, username: string) => Promise<{ success: boolean; needsEmailConfirmation?: boolean; error?: { message?: string } | string | null }>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<{ success: boolean; error?: string | null }>;
+  resendConfirmationEmail: (email: string) => Promise<{ success: boolean; error?: string | null }>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<boolean>;
 }
 
@@ -61,7 +64,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
       const loaded = await supabaseService.getCurrentUser();
       setUser(loaded);
-      return { success: true };
+      return { success: true, error: null };
     } catch (err: any) {
       return { success: false, error: { message: err.message || 'Login failed' } };
     }
@@ -69,51 +72,80 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const signUp = async (email: string, pass: string, username: string) => {
     try {
-      const { user: authUser, error } = await supabaseService.signUp(email, pass, username);
+      const { user: authUser, session, needsEmailConfirmation, error } = await supabaseService.signUp(
+        email,
+        pass,
+        username
+      );
+
       if (error) {
         return { success: false, error: { message: error.message || 'Registration failed' } };
       }
 
-      // Signup returned success - now load and verify the user profile
-      const loaded = await supabaseService.getCurrentUser();
-      
-      // If profile loaded, verify the username matches the signup attempt
-      if (loaded && loaded.username) {
-        // Check if the profile username matches what we tried to create (case-insensitive)
-        if (loaded.username.toLowerCase() !== username.toLowerCase()) {
-          // Username mismatch = duplicate email scenario
-          return {
-            success: false,
-            error: { message: 'An account with this email already exists. Please sign in instead.' }
-          };
-        }
-        // Username matches - successful new account
-        setUser(loaded);
-        return { success: true, error: null };
-      }
-
-      // Profile didn't load or has no username
-      // If we have an authUser, this might be a duplicate email with permission/timing issues
-      if (authUser) {
+      // If email confirmation is required (no session yet)
+      if (needsEmailConfirmation) {
         return {
-          success: false,
-          error: { message: 'An account with this email already exists. Please sign in instead.' }
+          success: true,
+          needsEmailConfirmation: true,
+          error: null
         };
       }
 
-      // No profile and no authUser - genuine account creation failure
+      // Instant session confirmed (e.g. email confirmation disabled)
+      if (session || authUser) {
+        const loaded = await supabaseService.getCurrentUser();
+        setUser(loaded);
+        return {
+          success: true,
+          needsEmailConfirmation: false,
+          error: null
+        };
+      }
+
       return {
-        success: false,
-        error: { message: 'Failed to create account. Please try again.' }
+        success: true,
+        needsEmailConfirmation: true,
+        error: null
       };
     } catch (err: any) {
       return { success: false, error: { message: err.message || 'Registration failed' } };
     }
   };
 
+  const resendConfirmationEmail = async (email: string): Promise<{ success: boolean; error?: string | null }> => {
+    try {
+      const { error } = await supabaseService.resendConfirmationEmail(email);
+      if (error) {
+        return { success: false, error: error.message || 'Failed to resend confirmation email.' };
+      }
+      return { success: true, error: null };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to resend confirmation email.' };
+    }
+  };
+
   const signOut = async () => {
     await supabaseService.signOut();
     setUser(null);
+  };
+
+  const deleteAccount = async (): Promise<{ success: boolean; error?: string | null }> => {
+    try {
+      const currentUid = user?.id;
+      const result = await supabaseService.deleteAccount();
+      if (result.success) {
+        if (currentUid) {
+          localStorageService.purgeUserLocalData(currentUid);
+        } else {
+          localStorageService.purgeUserLocalData();
+        }
+        setUser(null);
+        return { success: true, error: null };
+      }
+      return { success: false, error: result.error?.message || 'Failed to delete account.' };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Failed to delete account.' };
+    }
   };
 
   const updateProfile = async (updates: Partial<UserProfile>): Promise<boolean> => {
@@ -137,6 +169,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         signIn,
         signUp,
         signOut,
+        deleteAccount,
+        resendConfirmationEmail,
         updateProfile
       }}
     >

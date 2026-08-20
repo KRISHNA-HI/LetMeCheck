@@ -68,7 +68,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentRoute, navigate }) => {
           <div className="flex flex-col">
             <span className="font-bold text-lg text-slate-100 tracking-tight">LetMeCheck</span>
             <span className="text-[11px] text-slate-400 font-normal -mt-0.5">
-              Manga & Material Catalog
+              Franchise & Entertainment Catalog
             </span>
           </div>
         </div>
@@ -105,7 +105,7 @@ export const Navbar: React.FC<NavbarProps> = ({ currentRoute, navigate }) => {
           <form onSubmit={handleQuickSearch} className="hidden sm:block relative w-44 lg:w-60">
             <input
               type="text"
-              placeholder="Search manga, manhwa..."
+              placeholder="Search movies, series, anime, manga..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full bg-slate-900 border border-slate-800 rounded-lg pl-9 pr-3 py-1.5 text-xs text-slate-200 placeholder-slate-500 focus:outline-hidden focus:border-sky-500 transition-colors"
@@ -120,10 +120,10 @@ export const Navbar: React.FC<NavbarProps> = ({ currentRoute, navigate }) => {
               className="flex items-center gap-2 pl-2 pr-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-800 transition-colors"
               title="View Profile"
             >
-              {user.avatar_url ? (
+              {user.avatar_url && user.avatar_url.trim() !== '' ? (
                 <img
-                  src={user.avatar_url}
-                  alt={user.display_name}
+                  src={user.avatar_url.trim()}
+                  alt={user.display_name || 'User'}
                   className="w-6 h-6 rounded-full object-cover border border-slate-700"
                 />
               ) : (

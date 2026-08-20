@@ -5,7 +5,13 @@ import { ImageWithFallback } from '../common/ImageWithFallback';
 import { Badge } from '../common/Badge';
 import { ProgressBar } from '../common/ProgressBar';
 import { useLibrary } from '../../hooks/useLibrary';
-import { getMaterialTypeBadgeClass, getStatusColorClass, getDisplayTitle } from '../../utils/formatters';
+import {
+  getMaterialTypeBadgeClass,
+  getStatusColorClass,
+  getDisplayTitle,
+  getPresentationStatus,
+  isReadingMedia
+} from '../../utils/formatters';
 
 interface MangaCardProps {
   manga: Manga;
@@ -28,6 +34,7 @@ export const MangaCard: React.FC<MangaCardProps> = ({ manga, onClick, showProgre
   };
 
   const currentChapters = progress?.chapters_read || 0;
+  const presentationStatus = entry ? getPresentationStatus(entry.status, manga.type) : '';
 
   return (
     <div
@@ -41,17 +48,17 @@ export const MangaCard: React.FC<MangaCardProps> = ({ manga, onClick, showProgre
           alt={displayTitle}
           aspectRatio="aspect-[2/3]"
           priority={priority}
-          className="group-hover:scale-105 transition-transform duration-300"
+          className="group-hover:scale-105 transition-transform duration-300 pointer-events-none"
         />
 
         {/* Gradient Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-black/30 opacity-70 group-hover:opacity-50 transition-opacity" />
+        <div className="absolute inset-0 bg-gradient-to-t from-zinc-950 via-transparent to-black/30 opacity-70 group-hover:opacity-50 transition-opacity pointer-events-none" />
 
         {/* Favorite Heart Button */}
         <button
           type="button"
           onClick={handleFavoriteClick}
-          className={`absolute top-2 right-2 p-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer ${
+          className={`absolute top-2 right-2 z-10 p-1.5 rounded-full backdrop-blur-md transition-all cursor-pointer ${
             isFav
               ? 'bg-rose-500/90 text-white shadow-xs'
               : 'bg-black/50 text-zinc-300 hover:text-white hover:bg-black/70'
@@ -62,7 +69,7 @@ export const MangaCard: React.FC<MangaCardProps> = ({ manga, onClick, showProgre
         </button>
 
         {/* Top-Left Type Badge */}
-        <div className="absolute top-2 left-2 flex flex-col gap-1 items-start">
+        <div className="absolute top-2 left-2 z-10 flex flex-col gap-1 items-start pointer-events-none">
           <span
             className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border backdrop-blur-md shadow-xs ${getMaterialTypeBadgeClass(
               manga.type
@@ -73,7 +80,7 @@ export const MangaCard: React.FC<MangaCardProps> = ({ manga, onClick, showProgre
         </div>
 
         {/* Bottom Score & Status on Cover */}
-        <div className="absolute bottom-2 left-2 right-2 flex items-center justify-between text-xs">
+        <div className="absolute bottom-2 left-2 right-2 z-10 flex items-center justify-between text-xs pointer-events-none">
           {manga.score && manga.score > 0 ? (
             <div className="flex items-center gap-1 bg-black/70 backdrop-blur-md px-1.5 py-0.5 rounded border border-white/10 text-zinc-100 text-[10px] font-bold">
               <span>{manga.score}%</span>
@@ -85,10 +92,10 @@ export const MangaCard: React.FC<MangaCardProps> = ({ manga, onClick, showProgre
           {entry && (
             <span
               className={`text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md border backdrop-blur-md ${getStatusColorClass(
-                entry.status
+                presentationStatus
               )}`}
             >
-              {entry.status}
+              {presentationStatus}
             </span>
           )}
         </div>
@@ -112,7 +119,7 @@ export const MangaCard: React.FC<MangaCardProps> = ({ manga, onClick, showProgre
           ))}
         </div>
 
-        {/* Reading Progress Bar if active */}
+        {/* Reading/Watching Progress Bar if active */}
         {showProgress && entry && (
           <div className="mt-auto pt-1">
             <ProgressBar
@@ -120,7 +127,7 @@ export const MangaCard: React.FC<MangaCardProps> = ({ manga, onClick, showProgre
               total={manga.chapters}
               size="sm"
               showLabels={true}
-              unitLabel="Ch."
+              unitLabel={isReadingMedia(manga.type) ? 'Ch.' : 'Ep.'}
             />
           </div>
         )}
@@ -128,8 +135,14 @@ export const MangaCard: React.FC<MangaCardProps> = ({ manga, onClick, showProgre
         {/* Footer Meta */}
         {!entry && (
           <div className="mt-auto pt-1 flex items-center justify-between text-[10px] text-zinc-400 uppercase tracking-tight">
-            <span>{manga.status}</span>
-            <span>{manga.chapters ? `${manga.chapters} Ch.` : 'Ongoing'}</span>
+            <span>{manga.release_year ? `${manga.release_year}` : manga.status}</span>
+            <span>
+              {manga.type === 'Movie'
+                ? 'Movie'
+                : manga.chapters
+                ? `${manga.chapters} ${isReadingMedia(manga.type) ? 'Ch.' : 'Ep.'}`
+                : manga.status}
+            </span>
           </div>
         )}
       </div>

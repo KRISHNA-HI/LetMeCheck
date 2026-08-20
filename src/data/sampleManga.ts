@@ -20,8 +20,8 @@ export const SAMPLE_MANGA: Manga[] = [
     genres: ['Action', 'Adventure', 'Fantasy', 'Supernatural'],
     chapters: 179,
     volumes: 14,
-    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx105398-b673No9ZqnW3.jpg',
-    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/105398-bCgYmZ5r93qR.jpg',
+    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx105398-b673Vt5ZSuz3.jpg',
+    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/105398-4UrEhdqZukrg.jpg',
     score: 87,
     popularity: 142000,
     release_year: 2018,
@@ -54,8 +54,8 @@ export const SAMPLE_MANGA: Manga[] = [
     genres: ['Action', 'Adventure', 'Fantasy', 'Horror', 'Psychological'],
     chapters: 375,
     volumes: 42,
-    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx30002-75KxEKb261tU.png',
-    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/30002-3g9K8K3x9l7P.jpg',
+    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx30002-Cul4OeN7bYtn.jpg',
+    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/30002-3TuoSMl20fUX.jpg',
     score: 93,
     popularity: 189000,
     release_year: 1989,
@@ -72,8 +72,8 @@ export const SAMPLE_MANGA: Manga[] = [
     ]
   },
   {
-    id: '00119139-0000-4000-a000-000000119139',
-    anilist_id: 119139,
+    id: '00118586-0000-4000-a000-000000118586',
+    anilist_id: 118586,
     title: "Frieren: Beyond Journey's End",
     title_details: {
       english: "Frieren: Beyond Journey's End",
@@ -90,22 +90,22 @@ export const SAMPLE_MANGA: Manga[] = [
     genres: ['Adventure', 'Drama', 'Fantasy', 'Slice of Life'],
     chapters: 135,
     volumes: 13,
-    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx119139-Z1R1E7aJ646u.jpg',
-    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/119139-2zV9p3OsqxL2.jpg',
+    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx118586-CXKgWikBFQgS.jpg',
+    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/118586-uP5y5JpZkWKq.jpg',
     score: 91,
     popularity: 110000,
     release_year: 2020,
     source: 'AniList',
     materials: [
-      { id: '00119139-0000-4000-a000-000000000001', external_id: 'main-119139', type: 'Manga', title: 'Frieren: Beyond Journey\'s End Manga', number: 'Vol. 1-13', release_date: '2020 - Present' },
-      { id: '00119139-0000-4000-a000-000000000002', external_id: 'rel-119139-anime1', type: 'Anime', title: 'Sousou no Frieren Season 1', number: '28 Episodes', release_date: 'Fall 2023' },
-      { id: '00119139-0000-4000-a000-000000000003', external_id: 'rel-119139-anime2', type: 'Anime', title: 'Sousou no Frieren Season 2', number: 'Upcoming Season', release_date: 'Announced' },
-      { id: '00119139-0000-4000-a000-000000000004', external_id: 'rel-119139-mini', type: 'Special', title: 'Frieren Mini Anime (Sousou no Frieren mini)', number: '11 Shorts', release_date: '2023 - 2024' }
+      { id: '00118586-0000-4000-a000-000000000001', external_id: 'main-118586', type: 'Manga', title: 'Frieren: Beyond Journey\'s End Manga', number: 'Vol. 1-13', release_date: '2020 - Present' },
+      { id: '00118586-0000-4000-a000-000000000002', external_id: 'rel-118586-anime1', type: 'Anime', title: 'Sousou no Frieren Season 1', number: '28 Episodes', release_date: 'Fall 2023' },
+      { id: '00118586-0000-4000-a000-000000000003', external_id: 'rel-118586-anime2', type: 'Anime', title: 'Sousou no Frieren Season 2', number: 'Upcoming Season', release_date: 'Announced' },
+      { id: '00118586-0000-4000-a000-000000000004', external_id: 'rel-118586-mini', type: 'Special', title: 'Frieren Mini Anime (Sousou no Frieren mini)', number: '11 Shorts', release_date: '2023 - 2024' }
     ]
   },
   {
-    id: '00123902-0000-4000-a000-000000123902',
-    anilist_id: 123902,
+    id: '00119257-0000-4000-a000-000000119257',
+    anilist_id: 119257,
     title: 'Omniscient Reader',
     title_details: {
       english: 'Omniscient Reader',
@@ -122,16 +122,16 @@ export const SAMPLE_MANGA: Manga[] = [
     genres: ['Action', 'Adventure', 'Fantasy', 'Supernatural', 'Psychological'],
     chapters: 240,
     volumes: 11,
-    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx123902-8n0aJ2B8jE1v.jpg',
-    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/123902-1Gg4vC6lH9xN.jpg',
+    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx119257-Pi21aq3ey9GG.jpg',
+    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/119257-gP84uYv9x4p1.jpg',
     score: 89,
     popularity: 98000,
     release_year: 2020,
     source: 'AniList',
     materials: [
-      { id: '00123902-0000-4000-a000-000000000001', external_id: 'main-123902', type: 'Manhwa', title: 'Omniscient Reader Webtoon', number: '200+ Chapters', release_date: '2020 - Present' },
-      { id: '00123902-0000-4000-a000-000000000002', external_id: 'rel-123902-novel', type: 'Light Novel', title: 'Omniscient Reader\'s Viewpoint (Web Novel)', number: '551 Chapters', release_date: '2018 - 2020' },
-      { id: '00123902-0000-4000-a000-000000000003', external_id: 'rel-123902-anime', type: 'Anime', title: 'Omniscient Reader TV Anime Adaptation', number: 'TV Anime', release_date: 'Announced' }
+      { id: '00119257-0000-4000-a000-000000000001', external_id: 'main-119257', type: 'Manhwa', title: 'Omniscient Reader Webtoon', number: '200+ Chapters', release_date: '2020 - Present' },
+      { id: '00119257-0000-4000-a000-000000000002', external_id: 'rel-119257-novel', type: 'Light Novel', title: 'Omniscient Reader\'s Viewpoint (Web Novel)', number: '551 Chapters', release_date: '2018 - 2020' },
+      { id: '00119257-0000-4000-a000-000000000003', external_id: 'rel-119257-anime', type: 'Anime', title: 'Omniscient Reader TV Anime Adaptation', number: 'TV Anime', release_date: 'Announced' }
     ]
   },
   {
@@ -153,8 +153,8 @@ export const SAMPLE_MANGA: Manga[] = [
     genres: ['Action', 'Adventure', 'Comedy', 'Fantasy'],
     chapters: 1130,
     volumes: 110,
-    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx30013-6q3YkM4x0h5a.jpg',
-    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/30013-1082697843.jpg',
+    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx30013-BeslEMqiPhlk.jpg',
+    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/30013-hbbRZqC5MjYh.jpg',
     score: 92,
     popularity: 210000,
     release_year: 1997,
@@ -168,8 +168,8 @@ export const SAMPLE_MANGA: Manga[] = [
     ]
   },
   {
-    id: '00113443-0000-4000-a000-000000113443',
-    anilist_id: 113443,
+    id: '00105778-0000-4000-a000-000000105778',
+    anilist_id: 105778,
     title: 'Chainsaw Man',
     title_details: {
       english: 'Chainsaw Man',
@@ -186,22 +186,22 @@ export const SAMPLE_MANGA: Manga[] = [
     genres: ['Action', 'Comedy', 'Drama', 'Horror', 'Supernatural'],
     chapters: 180,
     volumes: 18,
-    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx113443-4v7Ygq3V2hU1.jpg',
-    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/113443-16297382.jpg',
+    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx105778-euxXZEIfDY2u.png',
+    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/105778-4kKx8z4e8o4m.jpg',
     score: 86,
     popularity: 165000,
     release_year: 2018,
     source: 'AniList',
     materials: [
-      { id: '00113443-0000-4000-a000-000000000001', external_id: 'main-113443', type: 'Manga', title: 'Chainsaw Man Part 1 (Public Safety Arc)', number: 'Chapters 1-97', release_date: '2018 - 2020' },
-      { id: '00113443-0000-4000-a000-000000000002', external_id: 'rel-113443-part2', type: 'Manga', title: 'Chainsaw Man Part 2 (Academy Arc)', number: 'Chapters 98+', release_date: '2022 - Present' },
-      { id: '00113443-0000-4000-a000-000000000003', external_id: 'rel-113443-anime', type: 'Anime', title: 'Chainsaw Man Season 1', number: '12 Episodes', release_date: 'Fall 2022' },
-      { id: '00113443-0000-4000-a000-000000000004', external_id: 'rel-113443-reze', type: 'Movie', title: 'Chainsaw Man – The Movie: Reze Arc', number: 'Theatrical Film', release_date: 'Upcoming' }
+      { id: '00105778-0000-4000-a000-000000000001', external_id: 'main-105778', type: 'Manga', title: 'Chainsaw Man Part 1 (Public Safety Arc)', number: 'Chapters 1-97', release_date: '2018 - 2020' },
+      { id: '00105778-0000-4000-a000-000000000002', external_id: 'rel-105778-part2', type: 'Manga', title: 'Chainsaw Man Part 2 (Academy Arc)', number: 'Chapters 98+', release_date: '2022 - Present' },
+      { id: '00105778-0000-4000-a000-000000000003', external_id: 'rel-105778-anime', type: 'Anime', title: 'Chainsaw Man Season 1', number: '12 Episodes', release_date: 'Fall 2022' },
+      { id: '00105778-0000-4000-a000-000000000004', external_id: 'rel-105778-reze', type: 'Movie', title: 'Chainsaw Man – The Movie: Reze Arc', number: 'Theatrical Film', release_date: 'Upcoming' }
     ]
   },
   {
-    id: '00121496-0000-4000-a000-000000121496',
-    anilist_id: 121496,
+    id: '00132029-0000-4000-a000-000000132029',
+    anilist_id: 132029,
     title: 'Dandadan',
     title_details: {
       english: 'Dandadan',
@@ -218,21 +218,21 @@ export const SAMPLE_MANGA: Manga[] = [
     genres: ['Action', 'Comedy', 'Romance', 'Sci-Fi', 'Supernatural'],
     chapters: 170,
     volumes: 17,
-    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx121496-e17fW3HhQoGZ.jpg',
-    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/121496-3GvF2m5x9Y1L.jpg',
+    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx132029-prGF4gePdSKv.jpg',
+    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/132029-87m69v93k8z4.jpg',
     score: 85,
     popularity: 88000,
     release_year: 2021,
     source: 'AniList',
     materials: [
-      { id: '00121496-0000-4000-a000-000000000001', external_id: 'main-121496', type: 'Manga', title: 'Dandadan Serialization', number: 'Vol. 1-17+', release_date: '2021 - Present' },
-      { id: '00121496-0000-4000-a000-000000000002', external_id: 'rel-121496-anime1', type: 'Anime', title: 'Dandadan Season 1', number: '12 Episodes', release_date: 'Fall 2024' },
-      { id: '00121496-0000-4000-a000-000000000003', external_id: 'rel-121496-anime2', type: 'Anime', title: 'Dandadan Season 2', number: 'Season 2', release_date: '2025' }
+      { id: '00132029-0000-4000-a000-000000000001', external_id: 'main-132029', type: 'Manga', title: 'Dandadan Serialization', number: 'Vol. 1-17+', release_date: '2021 - Present' },
+      { id: '00132029-0000-4000-a000-000000000002', external_id: 'rel-132029-anime1', type: 'Anime', title: 'Dandadan Season 1', number: '12 Episodes', release_date: 'Fall 2024' },
+      { id: '00132029-0000-4000-a000-000000000003', external_id: 'rel-132029-anime2', type: 'Anime', title: 'Dandadan Season 2', number: 'Season 2', release_date: '2025' }
     ]
   },
   {
-    id: '00133284-0000-4000-a000-000000133284',
-    anilist_id: 133284,
+    id: '00132144-0000-4000-a000-000000132144',
+    anilist_id: 132144,
     title: 'Return of the Blossoming Blade',
     title_details: {
       english: 'Return of the Blossoming Blade',
@@ -249,15 +249,15 @@ export const SAMPLE_MANGA: Manga[] = [
     genres: ['Action', 'Adventure', 'Comedy', 'Fantasy', 'Martial Arts'],
     chapters: 140,
     volumes: 8,
-    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx133284-4hG5eYh2Oa3z.jpg',
-    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/133284-7aX0bQ5y.jpg',
+    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx132144-i5B4VnG9sRgh.png',
+    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/132144-7v93k8z4e8o4.jpg',
     score: 87,
     popularity: 64000,
     release_year: 2021,
     source: 'AniList',
     materials: [
-      { id: '00133284-0000-4000-a000-000000000001', external_id: 'main-133284', type: 'Manhwa', title: 'Return of the Mount Hua Sect Webtoon', number: 'Season 1-2', release_date: '2021 - Present' },
-      { id: '00133284-0000-4000-a000-000000000002', external_id: 'rel-133284-novel', type: 'Light Novel', title: 'Return of the Mount Hua Sect (Web Novel)', number: '1600+ Chapters', release_date: '2019 - Present' }
+      { id: '00132144-0000-4000-a000-000000000001', external_id: 'main-132144', type: 'Manhwa', title: 'Return of the Mount Hua Sect Webtoon', number: 'Season 1-2', release_date: '2021 - Present' },
+      { id: '00132144-0000-4000-a000-000000000002', external_id: 'rel-132144-novel', type: 'Light Novel', title: 'Return of the Mount Hua Sect (Web Novel)', number: '1600+ Chapters', release_date: '2019 - Present' }
     ]
   },
   {
@@ -279,8 +279,8 @@ export const SAMPLE_MANGA: Manga[] = [
     genres: ['Action', 'Adventure', 'Fantasy', 'Martial Arts'],
     chapters: 700,
     volumes: 72,
-    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/bx30011-p0xZf0Z4yU4r.jpg',
-    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/30011-wN95W3E3wNf2.jpg',
+    cover_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/cover/large/nx30011-9yUF1dXWgDOx.jpg',
+    banner_url: 'https://s4.anilist.co/file/anilistcdn/media/manga/banner/30011-pkX1O0EFqvV7.jpg',
     score: 81,
     popularity: 215000,
     release_year: 1999,

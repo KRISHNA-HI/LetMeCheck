@@ -12,8 +12,8 @@ interface FavoritesProps {
 }
 
 export const Favorites: React.FC<FavoritesProps> = ({ navigate, onSelectManga }) => {
-  const { user } = useAuth();
-  const { favorites, library, stats, requireAuth } = useLibrary();
+  const { user, loading: authLoading } = useAuth();
+  const { favorites, library, stats, requireAuth, loading: libraryLoading } = useLibrary();
   const [favoriteMangaList, setFavoriteMangaList] = useState<Manga[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
 
@@ -76,6 +76,15 @@ export const Favorites: React.FC<FavoritesProps> = ({ navigate, onSelectManga })
     };
   }, [user, favorites, library]);
 
+  if (authLoading || (user && libraryLoading)) {
+    return (
+      <div className="flex flex-col items-center justify-center p-16 text-center max-w-lg mx-auto">
+        <div className="w-8 h-8 rounded-full border-2 border-pink-400 border-t-transparent animate-spin mb-4" />
+        <p className="text-xs text-zinc-400">Loading your favorites...</p>
+      </div>
+    );
+  }
+
   // If user is not logged in, show auth gate
   if (!user) {
     return (
@@ -85,7 +94,7 @@ export const Favorites: React.FC<FavoritesProps> = ({ navigate, onSelectManga })
         </div>
         <h2 className="text-xl sm:text-2xl font-black text-zinc-100 mb-2">Favorites is a Personal Feature</h2>
         <p className="text-xs sm:text-sm text-zinc-400 mb-6 leading-relaxed">
-          Create a free account to bookmark your top series, organize favorites, and sync your reading collection across all devices.
+          Create a free account to bookmark your top movies, TV series, anime, and manga, organize favorites, and sync your collection across all devices.
         </p>
         <div className="flex flex-col sm:flex-row gap-3 w-full max-w-xs">
           <button
@@ -106,7 +115,7 @@ export const Favorites: React.FC<FavoritesProps> = ({ navigate, onSelectManga })
   }
 
   return (
-    <div className="flex flex-col gap-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+    <div className="flex flex-col gap-6 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 pb-28 md:pb-20">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

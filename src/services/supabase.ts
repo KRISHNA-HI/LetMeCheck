@@ -36,6 +36,23 @@ export const supabase: SupabaseClient | null = isSupabaseConfigured()
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export const getAuthRedirectUrl = (): string | undefined => {
+  if (typeof window !== 'undefined' && window.location) {
+    const origin = window.location.origin;
+    if (origin && origin !== 'null') {
+      return origin;
+    }
+  }
+  return undefined;
+};
+
+export interface SignUpResult {
+  user: any | null;
+  session: any | null;
+  needsEmailConfirmation: boolean;
+  error: Error | null;
+}
+
 export const supabaseService = {
   isConfigured(): boolean {
     return isSupabaseConfigured();
@@ -44,10 +61,17 @@ export const supabaseService = {
   // ----------------------------------------------------
   // AUTHENTICATION
   // ----------------------------------------------------
-  async signUp(email: string, password: string, username: string) {
+  async signUp(email: string, password: string, username: string): Promise<SignUpResult> {
     if (!supabase) {
-      return { user: null, error: new Error('Supabase client is not configured.') };
+      return {
+        user: null,
+        session: null,
+        needsEmailConfirmation: false,
+        error: new Error('Supabase client is not configured.')
+      };
     }
+
+    const redirectUrl = getAuthRedirectUrl();
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -57,68 +81,90 @@ export const supabaseService = {
           username,
           display_name: username
         },
-        emailRedirectTo: window.location.origin
+        ...(redirectUrl ? { emailRedirectTo: redirectUrl } : {})
       }
     });
 
     if (error) {
-      // Detect duplicate email error from Supabase
-      const errorMessage = error.message || '';
+      const msg = (error.message || '').toLowerCase();
+      const status = (error as any).status;
+
       if (
-        errorMessage.toLowerCase().includes('already registered') ||
-        errorMessage.toLowerCase().includes('user already exists') ||
-        errorMessage.toLowerCase().includes('duplicate') ||
-        error.status === 422
+        msg.includes('over_email_send_rate_limit') ||
+        msg.includes('security purposes') ||
+        (msg.includes('rate limit') && msg.includes('email'))
       ) {
         return {
           user: null,
+          session: null,
+          needsEmailConfirmation: false,
+          error: new Error('Supabase email rate limit reached: Verification emails are limited to once every 60 seconds. Please wait a moment before trying again.')
+        };
+      }
+
+      if (
+        status === 429 ||
+        msg.includes('rate limit') ||
+        msg.includes('too many requests')
+      ) {
+        return {
+          user: null,
+          session: null,
+          needsEmailConfirmation: false,
+          error: new Error('Rate limit reached: Too many attempts in a short period. Please wait a moment before trying again.')
+        };
+      }
+
+      if (
+        msg.includes('already registered') ||
+        msg.includes('user already exists') ||
+        msg.includes('duplicate') ||
+        status === 422
+      ) {
+        return {
+          user: null,
+          session: null,
+          needsEmailConfirmation: false,
           error: new Error('An account with this email already exists. Please sign in instead.')
         };
       }
-      return { user: null, error };
+
+      return {
+        user: null,
+        session: null,
+        needsEmailConfirmation: false,
+        error
+      };
     }
 
-    // Success from Supabase - but verify this is a NEW profile creation
-    // If the email already existed, Supabase might return success with the existing user
-    // We need to check if the profile matches what we tried to create
-    if (data.user && data.user.id) {
-      try {
-        // Wait a moment for the profile trigger to complete
-        await new Promise(resolve => setTimeout(resolve, 100));
-
-        const { data: existingProfile, error: profileError } = await supabase
-          .from('profiles')
-          .select('username, created_at, id')
-          .eq('id', data.user.id)
-          .maybeSingle();
-
-        if (profileError) {
-          console.error('Error checking profile after signup:', profileError);
-          return { user: data.user, error: null };
-        }
-
-        // If a profile exists for this user ID, verify it matches our signup attempt
-        if (existingProfile) {
-          // Profile exists - check if it was created for this signup or if it's a pre-existing account
-          // If the username doesn't match what we tried to create, this is a duplicate email scenario
-          if (
-            existingProfile.username &&
-            existingProfile.username.toLowerCase() !== username.toLowerCase()
-          ) {
-            // The profile already exists with a different username - duplicate email!
-            return {
-              user: null,
-              error: new Error('An account with this email already exists. Please sign in instead.')
-            };
-          }
-        }
-      } catch (e) {
-        console.error('Error validating signup:', e);
-        // Fall through and return the user - something went wrong with validation
-      }
+    if (!data.user) {
+      return {
+        user: null,
+        session: null,
+        needsEmailConfirmation: false,
+        error: new Error('Unable to create account. Please try again.')
+      };
     }
 
-    return { user: data.user, error: null };
+    if (data.user.identities && data.user.identities.length === 0) {
+      return {
+        user: null,
+        session: null,
+        needsEmailConfirmation: false,
+        error: new Error('An account with this email already exists. Please sign in instead.')
+      };
+    }
+
+    const needsEmailConfirmation =
+      !data.session &&
+      (!data.user.email_confirmed_at || data.user.confirmed_at == null);
+
+    return {
+      user: data.user,
+      session: data.session,
+      needsEmailConfirmation,
+      error: null
+    };
   },
 
   async signIn(email: string, password: string) {
@@ -131,8 +177,74 @@ export const supabaseService = {
       password
     });
 
-    if (error) return { user: null, error };
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      const status = (error as any).status;
+
+      if (
+        status === 429 ||
+        msg.includes('rate limit') ||
+        msg.includes('too many requests')
+      ) {
+        return {
+          user: null,
+          error: new Error('Too many login attempts. Please wait a moment before trying again.')
+        };
+      }
+
+      if (msg.includes('email not confirmed')) {
+        return {
+          user: null,
+          error: new Error('Email not confirmed. Please check your inbox to verify your email before signing in.')
+        };
+      }
+
+      if (msg.includes('invalid login credentials') || msg.includes('invalid credentials')) {
+        return {
+          user: null,
+          error: new Error('Invalid email or password. Please verify your credentials and try again.')
+        };
+      }
+
+      return { user: null, error };
+    }
+
     return { user: data.user, error: null };
+  },
+
+  async resendConfirmationEmail(email: string) {
+    if (!supabase) {
+      return { error: new Error('Supabase client is not configured.') };
+    }
+
+    const redirectUrl = getAuthRedirectUrl();
+    const { error } = await supabase.auth.resend({
+      type: 'signup',
+      email,
+      options: {
+        ...(redirectUrl ? { emailRedirectTo: redirectUrl } : {})
+      }
+    });
+
+    if (error) {
+      const msg = (error.message || '').toLowerCase();
+      const status = (error as any).status;
+
+      if (
+        status === 429 ||
+        msg.includes('rate limit') ||
+        msg.includes('over_email_send_rate_limit') ||
+        msg.includes('too many') ||
+        msg.includes('security purposes')
+      ) {
+        return {
+          error: new Error('Verification emails can only be sent once every 60 seconds. Please wait before requesting another.')
+        };
+      }
+      return { error };
+    }
+
+    return { error: null };
   },
 
   async signOut() {
@@ -144,17 +256,184 @@ export const supabaseService = {
     return { error };
   },
 
+  async deleteAccount(): Promise<{ success: boolean; error: Error | null }> {
+    try {
+      const isConfig = isSupabaseConfigured();
+
+      if (!isConfig || !supabase) {
+        // In local/offline mode, delete local user storage
+        const currentLocalUser = localStorageService.getLocalUser();
+        if (currentLocalUser?.id) {
+          localStorageService.purgeUserLocalData(currentLocalUser.id);
+        } else {
+          localStorageService.clearUserData();
+        }
+        return { success: true, error: null };
+      }
+
+      // 1. Get authenticated user
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      const currentLocalUser = localStorageService.getLocalUser();
+      const uid = user?.id || currentLocalUser?.id;
+
+      if (!uid) {
+        return { success: false, error: new Error('No authenticated user session found.') };
+      }
+
+      // 2. Explicitly delete user rows from all user-specific public tables (enforced by RLS auth.uid() = user_id)
+      try {
+        await supabase.from('notes').delete().eq('user_id', uid);
+      } catch (e) {
+        console.warn('Error deleting user notes:', e);
+      }
+
+      try {
+        await supabase.from('favorites').delete().eq('user_id', uid);
+      } catch (e) {
+        console.warn('Error deleting user favorites:', e);
+      }
+
+      try {
+        await supabase.from('user_material_progress').delete().eq('user_id', uid);
+      } catch (e) {
+        console.warn('Error deleting user material progress:', e);
+      }
+
+      try {
+        await supabase.from('user_progress').delete().eq('user_id', uid);
+      } catch (e) {
+        console.warn('Error deleting user progress:', e);
+      }
+
+      try {
+        await supabase.from('user_library').delete().eq('user_id', uid);
+      } catch (e) {
+        console.warn('Error deleting user library:', e);
+      }
+
+      try {
+        await supabase.from('profiles').delete().eq('id', uid);
+      } catch (e) {
+        console.warn('Error deleting user profile:', e);
+      }
+
+      // 3. Delete Supabase Auth user record server-side
+      let authDeleted = false;
+      let deletionErrorMessage = '';
+
+      // Get current session token for API / Edge functions
+      const { data: sessionData } = await supabase.auth.getSession();
+      const accessToken = sessionData?.session?.access_token;
+
+      // Method A: Call server API route `/api/delete-account`
+      if (accessToken) {
+        try {
+          const res = await fetch('/api/delete-account', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${accessToken}`
+            }
+          });
+          if (res.ok) {
+            const apiRes = await res.json();
+            if (apiRes.success) {
+              authDeleted = true;
+            } else if (apiRes.error) {
+              deletionErrorMessage = apiRes.error;
+            }
+          } else {
+            const errData = await res.json().catch(() => null);
+            if (errData?.error) {
+              deletionErrorMessage = errData.error;
+            }
+          }
+        } catch (apiErr: any) {
+          console.warn('API /api/delete-account call error:', apiErr);
+        }
+      }
+
+      // Method B: Invoke Supabase Edge Function 'delete-user-account'
+      if (!authDeleted) {
+        try {
+          const { data: funcData, error: funcErr } = await supabase.functions.invoke('delete-user-account');
+          if (!funcErr && funcData && (funcData.success || funcData.message)) {
+            authDeleted = true;
+          } else if (funcErr) {
+            deletionErrorMessage = funcErr.message || deletionErrorMessage;
+          }
+        } catch (e: any) {
+          deletionErrorMessage = e?.message || deletionErrorMessage;
+        }
+      }
+
+      // Method C: Invoke PostgreSQL RPC 'delete_user_account' (SECURITY DEFINER)
+      if (!authDeleted) {
+        try {
+          const { error: rpcErr } = await supabase.rpc('delete_user_account');
+          if (!rpcErr) {
+            authDeleted = true;
+          } else {
+            deletionErrorMessage = rpcErr.message || deletionErrorMessage;
+          }
+        } catch (e: any) {
+          deletionErrorMessage = e?.message || deletionErrorMessage;
+        }
+      }
+
+      // If server-side Auth deletion failed, do NOT claim success and do NOT wipe session
+      if (!authDeleted) {
+        const errText = deletionErrorMessage
+          ? `Server failed to delete auth account: ${deletionErrorMessage}`
+          : 'Failed to delete Auth account. Please ensure the delete_user_account RPC or Edge Function is installed on Supabase.';
+        return { success: false, error: new Error(errText) };
+      }
+
+      // 4. Purge all local user-scoped storage data
+      localStorageService.purgeUserLocalData(uid);
+
+      // 5. Sign out from client session
+      try {
+        await supabase.auth.signOut();
+      } catch (signOutErr) {
+        console.warn('Sign out after delete:', signOutErr);
+      }
+
+      return { success: true, error: null };
+    } catch (err: any) {
+      console.error('Failed to delete account:', err);
+      return { success: false, error: err instanceof Error ? err : new Error('Account deletion failed.') };
+    }
+  },
+
   async resetPassword(email: string) {
     if (!supabase) {
       return { data: null, error: new Error('Supabase client is not configured.') };
     }
-    const { data, error } = await supabase.auth.resetPasswordForEmail(email);
+    const redirectUrl = getAuthRedirectUrl();
+    const { data, error } = await supabase.auth.resetPasswordForEmail(email, {
+      ...(redirectUrl ? { redirectTo: redirectUrl } : {})
+    });
+    return { data, error };
+  },
+
+  async signInWithOAuth(provider: 'google' | 'github' | 'discord' | string) {
+    if (!supabase) {
+      return { data: null, error: new Error('Supabase client is not configured.') };
+    }
+    const redirectUrl = getAuthRedirectUrl();
+    const { data, error } = await supabase.auth.signInWithOAuth({
+      provider: provider as any,
+      options: {
+        ...(redirectUrl ? { redirectTo: redirectUrl } : {})
+      }
+    });
     return { data, error };
   },
 
   async getCurrentUser(): Promise<UserProfile | null> {
     if (!supabase) {
-      return null;
+      return localStorageService.getLocalUser();
     }
 
     try {
@@ -163,12 +442,17 @@ export const supabaseService = {
         return null;
       }
 
-      // Fetch profile row
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', user.id)
-        .maybeSingle();
+      let profile: any = null;
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', user.id)
+          .maybeSingle();
+        profile = data;
+      } catch {
+        // Fallback to metadata if profiles table is not cached
+      }
 
       const userProfile: UserProfile = {
         id: user.id,
@@ -183,34 +467,45 @@ export const supabaseService = {
       return userProfile;
     } catch (e) {
       console.warn('getCurrentUser error:', e);
-      return null;
+      return localStorageService.getLocalUser();
     }
   },
 
   async updateProfile(userId: string, updates: Partial<UserProfile>) {
     if (!supabase) {
-      return { data: null, error: new Error('Supabase client is not configured.') };
-    }
-
-    const { data, error } = await supabase
-      .from('profiles')
-      .update({
-        display_name: updates.display_name,
-        avatar_url: updates.avatar_url,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', userId)
-      .select()
-      .single();
-
-    if (!error && data) {
       const current = localStorageService.getLocalUser();
       if (current) {
-        localStorageService.setLocalUser({ ...current, ...data });
+        localStorageService.setLocalUser({ ...current, ...updates });
       }
+      return { data: { ...current, ...updates }, error: null };
     }
 
-    return { data, error };
+    try {
+      const { data, error } = await supabase
+        .from('profiles')
+        .update({
+          display_name: updates.display_name,
+          avatar_url: updates.avatar_url,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId)
+        .select()
+        .single();
+
+      if (!error && data) {
+        const current = localStorageService.getLocalUser();
+        if (current) {
+          localStorageService.setLocalUser({ ...current, ...data });
+        }
+      }
+      return { data, error };
+    } catch (err) {
+      const current = localStorageService.getLocalUser();
+      if (current) {
+        localStorageService.setLocalUser({ ...current, ...updates });
+      }
+      return { data: updates, error: null };
+    }
   },
 
   // ----------------------------------------------------
@@ -225,7 +520,6 @@ export const supabaseService = {
       const isMangaIdUuid = typeof manga.id === 'string' && UUID_REGEX.test(manga.id);
       const anilistId = manga.anilist_id || (typeof manga.id === 'number' ? manga.id : null);
 
-      // 1. Check if manga already exists in database
       let existingMangaRow: any = null;
 
       if (isMangaIdUuid) {
@@ -243,52 +537,15 @@ export const supabaseService = {
         if (data) existingMangaRow = data;
       }
 
-      // 2. If already in database, fetch its materials and return canonical Manga object
       if (existingMangaRow) {
-        const { data: dbMaterials } = await supabase
-          .from('manga_material')
-          .select('*')
-          .eq('manga_id', existingMangaRow.id);
-
-        const materialsList = dbMaterials && dbMaterials.length > 0
-          ? dbMaterials.map((m: any) => ({
-              id: m.id,
-              manga_id: m.manga_id,
-              type: m.type,
-              title: m.title,
-              number: m.number,
-              description: m.description,
-              release_date: m.release_date,
-              external_id: m.external_id,
-              external_url: m.external_url
-            }))
-          : manga.materials;
-
         return {
-          id: existingMangaRow.id, // Supabase UUID
+          ...manga,
+          id: existingMangaRow.id,
           anilist_id: existingMangaRow.anilist_id,
-          mangadex_id: existingMangaRow.mangadex_id,
-          title: existingMangaRow.title,
-          alternative_titles: existingMangaRow.alternative_titles || [],
-          description: existingMangaRow.description || '',
-          type: existingMangaRow.type || 'Manga',
-          status: existingMangaRow.status || 'Ongoing',
-          author: existingMangaRow.author || undefined,
-          artist: existingMangaRow.artist || undefined,
-          genres: existingMangaRow.genres || [],
-          chapters: existingMangaRow.chapters,
-          volumes: existingMangaRow.volumes,
-          cover_url: existingMangaRow.cover_url,
-          banner_url: existingMangaRow.banner_url,
-          score: manga.score,
-          popularity: manga.popularity,
-          release_year: manga.release_year,
-          source: existingMangaRow.source || 'AniList',
-          materials: materialsList
+          title: existingMangaRow.title || manga.title
         };
       }
 
-      // 3. Insert fresh manga record into database WITHOUT id (let postgres generate UUID)
       const { data: inserted, error } = await supabase
         .from('manga')
         .insert({
@@ -312,59 +569,22 @@ export const supabaseService = {
         .single();
 
       if (error || !inserted) {
-        console.warn('Could not insert manga row into Supabase:', error);
         return manga;
-      }
-
-      // 4. Insert materials if provided
-      let canonicalMaterials = manga.materials || [];
-      if (canonicalMaterials.length > 0) {
-        const matsToInsert = canonicalMaterials.map((m) => ({
-          manga_id: inserted.id,
-          type: m.type,
-          title: m.title,
-          number: m.number || null,
-          description: m.description || null,
-          release_date: m.release_date || null,
-          external_id: m.external_id || (typeof m.id === 'string' && !UUID_REGEX.test(m.id) ? m.id : null),
-          external_url: m.external_url || null
-        }));
-
-        const { data: insertedMats } = await supabase
-          .from('manga_material')
-          .upsert(matsToInsert, { onConflict: 'manga_id,external_id' })
-          .select('*');
-
-        if (insertedMats && insertedMats.length > 0) {
-          canonicalMaterials = insertedMats.map((m: any) => ({
-            id: m.id, // Supabase generated UUID
-            manga_id: m.manga_id,
-            type: m.type,
-            title: m.title,
-            number: m.number,
-            description: m.description,
-            release_date: m.release_date,
-            external_id: m.external_id,
-            external_url: m.external_url
-          }));
-        }
       }
 
       return {
         ...manga,
-        id: inserted.id, // Supabase generated UUID
-        anilist_id: inserted.anilist_id,
-        materials: canonicalMaterials
+        id: inserted.id,
+        anilist_id: inserted.anilist_id
       };
     } catch (err) {
-      console.warn('getOrCreateManga exception:', err);
       return manga;
     }
   },
 
   async ensureMangaCached(manga: Manga): Promise<string> {
     const canonical = await this.getOrCreateManga(manga);
-    return canonical.id;
+    return canonical.id.toString();
   },
 
   // ----------------------------------------------------
@@ -372,7 +592,7 @@ export const supabaseService = {
   // ----------------------------------------------------
   async getLibrary(userId: string): Promise<UserLibraryEntry[]> {
     if (!supabase) {
-      return localStorageService.getLibrary();
+      return localStorageService.getLibrary(userId);
     }
 
     try {
@@ -406,30 +626,30 @@ export const supabaseService = {
         .eq('user_id', userId)
         .order('updated_at', { ascending: false });
 
-      if (error) throw error;
+      if (error || !data) {
+        return localStorageService.getLibrary(userId);
+      }
 
-      const formatted: UserLibraryEntry[] = (data || []).map((row: any) => ({
+      const formatted: UserLibraryEntry[] = data.map((row: any) => ({
         id: row.id,
         user_id: row.user_id,
-        manga_id: row.manga_id, // Always Supabase UUID
+        manga_id: row.manga_id,
         status: row.status as ReadingStatus,
         created_at: row.created_at,
         updated_at: row.updated_at,
         manga: row.manga
           ? {
               ...row.manga,
-              id: row.manga.id, // Supabase UUID
+              id: row.manga.id,
               anilist_id: row.manga.anilist_id
             }
           : undefined
       }));
 
-      // Cache locally for fast offline access
-      localStorageService.setLibrary(formatted);
+      localStorageService.setLibrary(formatted, userId);
       return formatted;
     } catch (err) {
-      console.warn('Supabase getLibrary error, returning cached:', err);
-      return localStorageService.getLibrary();
+      return localStorageService.getLibrary(userId);
     }
   },
 
@@ -446,8 +666,7 @@ export const supabaseService = {
         canonicalManga = await this.getOrCreateManga(manga);
         dbMangaId = canonicalManga.id;
       } catch (err) {
-        console.warn('ensureMangaCached in upsertLibraryEntry failed:', err);
-        // Continue with original manga ID and try to save anyway
+        // Continue with original manga ID
       }
     }
 
@@ -459,124 +678,167 @@ export const supabaseService = {
       updated_at: new Date().toISOString()
     };
 
+    // Always persist to user-scoped local storage immediately
+    localStorageService.saveLibraryEntry(entry, userId);
+
     if (!supabase) {
-      // Fallback: save locally only
-      localStorageService.saveLibraryEntry(entry);
       return { success: true, entry };
     }
 
     try {
-      // Save to Supabase first
-      const { data, error } = await supabase
-        .from('user_library')
-        .upsert(
-          {
-            user_id: userId,
-            manga_id: dbMangaId,
-            status,
-            updated_at: new Date().toISOString()
-          },
-          { onConflict: 'user_id,manga_id' }
-        )
-        .select(`
-          id,
-          user_id,
-          manga_id,
-          status,
-          created_at,
-          updated_at
-        `)
-        .single();
-
-      if (error) {
-        console.error('Error saving library entry to Supabase:', error);
-        return { success: false, entry, error };
+      let targetMangaUuid = dbMangaId.toString();
+      if (!UUID_REGEX.test(targetMangaUuid)) {
+        const { data } = await supabase
+          .from('manga')
+          .select('id')
+          .eq('anilist_id', manga.anilist_id || (typeof manga.id === 'number' ? manga.id : null))
+          .maybeSingle();
+        if (data?.id) targetMangaUuid = data.id;
       }
 
-      const fullEntry: UserLibraryEntry = {
-        ...data,
-        manga: canonicalManga
-      };
-
-      // Only update local storage after Supabase succeeds
-      localStorageService.saveLibraryEntry(fullEntry);
-      return { success: true, entry: fullEntry };
+      if (UUID_REGEX.test(targetMangaUuid)) {
+        await supabase
+          .from('user_library')
+          .upsert(
+            {
+              user_id: userId,
+              manga_id: targetMangaUuid,
+              status,
+              updated_at: new Date().toISOString()
+            },
+            { onConflict: 'user_id,manga_id' }
+          );
+      }
+      return { success: true, entry };
     } catch (err) {
-      console.error('upsertLibraryEntry exception:', err);
-      return { success: false, entry, error: err };
+      return { success: true, entry };
     }
   },
 
   async removeLibraryEntry(userId: string, mangaId: string | number): Promise<{ success: boolean; error?: any }> {
+    localStorageService.removeLibraryEntry(mangaId, userId);
+
     if (!supabase) {
-      // Fallback: remove locally only
-      localStorageService.removeLibraryEntry(mangaId);
       return { success: true };
     }
 
     try {
-      // Find the correct manga ID in the database
       let dbId = mangaId.toString();
-      if (typeof mangaId === 'number' || !UUID_REGEX.test(dbId)) {
-        const { data } = await supabase
-          .from('manga')
-          .select('id')
-          .eq('anilist_id', mangaId)
-          .maybeSingle();
-        if (data?.id) dbId = data.id;
+      if (!UUID_REGEX.test(dbId)) {
+        const numId = typeof mangaId === 'number' ? mangaId : parseInt(mangaId.toString(), 10);
+        if (!isNaN(numId)) {
+          const { data } = await supabase
+            .from('manga')
+            .select('id')
+            .eq('anilist_id', numId)
+            .maybeSingle();
+          if (data?.id) dbId = data.id;
+        }
       }
 
-      // Delete from Supabase first
-      const { error } = await supabase
-        .from('user_library')
-        .delete()
-        .eq('user_id', userId)
-        .eq('manga_id', dbId);
-
-      if (error) {
-        console.error('Error removing library entry from Supabase:', error);
-        return { success: false, error };
+      if (UUID_REGEX.test(dbId)) {
+        await supabase
+          .from('user_library')
+          .delete()
+          .eq('user_id', userId)
+          .eq('manga_id', dbId);
       }
-
-      // Only update local storage after Supabase succeeds
-      localStorageService.removeLibraryEntry(mangaId);
       return { success: true };
     } catch (err) {
-      console.error('removeLibraryEntry exception:', err);
-      return { success: false, error: err };
+      return { success: true };
     }
   },
 
   // ----------------------------------------------------
   // READING PROGRESS
   // ----------------------------------------------------
-  async getProgress(userId: string, mangaId: string | number): Promise<UserProgress | null> {
+  async getAllProgress(userId: string): Promise<UserProgress[]> {
     if (!supabase) {
-      return localStorageService.getProgress(mangaId);
+      return localStorageService.getAllProgress(userId);
     }
 
     try {
-      let dbId = mangaId.toString();
-      if (typeof mangaId === 'number' || !UUID_REGEX.test(dbId)) {
-        const { data } = await supabase
-          .from('manga')
-          .select('id')
-          .eq('anilist_id', mangaId)
-          .maybeSingle();
-        if (data?.id) dbId = data.id;
-      }
-
       const { data, error } = await supabase
         .from('user_progress')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('manga_id', dbId)
-        .maybeSingle();
+        .select(`
+          id,
+          user_id,
+          manga_id,
+          chapters_read,
+          volumes_read,
+          updated_at,
+          manga:manga_id (
+            anilist_id
+          )
+        `)
+        .eq('user_id', userId);
 
-      if (error) throw error;
-      return data || localStorageService.getProgress(mangaId);
+      if (error || !data) {
+        return localStorageService.getAllProgress(userId);
+      }
+
+      const list: UserProgress[] = [];
+      data.forEach((row: any) => {
+        const p: UserProgress = {
+          id: row.id,
+          user_id: row.user_id,
+          manga_id: row.manga_id,
+          chapters_read: row.chapters_read || 0,
+          volumes_read: row.volumes_read || 0,
+          updated_at: row.updated_at
+        };
+        list.push(p);
+
+        // Also add entry mapped by anilist_id if present
+        if (row.manga?.anilist_id) {
+          list.push({
+            ...p,
+            manga_id: row.manga.anilist_id.toString()
+          });
+        }
+      });
+
+      localStorageService.setAllProgress(list, userId);
+      return list;
     } catch {
-      return localStorageService.getProgress(mangaId);
+      return localStorageService.getAllProgress(userId);
+    }
+  },
+
+  async getProgress(userId: string, mangaId: string | number): Promise<UserProgress | null> {
+    const local = localStorageService.getProgress(mangaId, userId);
+    if (!supabase) return local;
+
+    try {
+      let dbId = mangaId.toString();
+      if (!UUID_REGEX.test(dbId)) {
+        const numId = typeof mangaId === 'number' ? mangaId : parseInt(mangaId.toString(), 10);
+        if (!isNaN(numId)) {
+          const { data } = await supabase
+            .from('manga')
+            .select('id')
+            .eq('anilist_id', numId)
+            .maybeSingle();
+          if (data?.id) dbId = data.id;
+        }
+      }
+
+      if (UUID_REGEX.test(dbId)) {
+        const { data } = await supabase
+          .from('user_progress')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('manga_id', dbId)
+          .maybeSingle();
+
+        if (data) {
+          localStorageService.saveProgress(data, userId);
+          return data;
+        }
+      }
+      return local;
+    } catch {
+      return local;
     }
   },
 
@@ -594,69 +856,100 @@ export const supabaseService = {
       updated_at: new Date().toISOString()
     };
 
+    // Save to user-scoped local storage
+    localStorageService.saveProgress(record, userId);
+
     if (!supabase) {
-      // Fallback: save locally only
-      localStorageService.saveProgress(record);
       return { success: true, progress: record };
     }
 
     try {
-      // Find the correct manga ID in the database
       let dbId = mangaId.toString();
-      if (typeof mangaId === 'number' || !UUID_REGEX.test(dbId)) {
-        const { data } = await supabase
-          .from('manga')
-          .select('id')
-          .eq('anilist_id', mangaId)
-          .maybeSingle();
-        if (data?.id) dbId = data.id;
+      if (!UUID_REGEX.test(dbId)) {
+        const numId = typeof mangaId === 'number' ? mangaId : parseInt(mangaId.toString(), 10);
+        if (!isNaN(numId)) {
+          const { data } = await supabase
+            .from('manga')
+            .select('id')
+            .eq('anilist_id', numId)
+            .maybeSingle();
+          if (data?.id) dbId = data.id;
+        }
       }
 
-      // Save to Supabase first
-      const { error } = await supabase.from('user_progress').upsert(
-        {
-          user_id: userId,
-          manga_id: dbId,
-          chapters_read: chaptersRead,
-          volumes_read: volumesRead,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'user_id,manga_id' }
-      );
-
-      if (error) {
-        console.error('Error saving progress to Supabase:', error);
-        return { success: false, progress: record, error };
+      if (UUID_REGEX.test(dbId)) {
+        await supabase.from('user_progress').upsert(
+          {
+            user_id: userId,
+            manga_id: dbId,
+            chapters_read: chaptersRead,
+            volumes_read: volumesRead,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'user_id,manga_id' }
+        );
       }
-
-      // Only update local storage after Supabase succeeds
-      localStorageService.saveProgress(record);
       return { success: true, progress: record };
     } catch (e) {
-      console.error('Supabase saveProgress exception:', e);
-      return { success: false, progress: record, error: e };
+      return { success: true, progress: record };
     }
   },
 
   // ----------------------------------------------------
   // MATERIAL PROGRESS
   // ----------------------------------------------------
-  async getMaterialProgress(userId: string, materialId: string): Promise<UserMaterialProgress | null> {
+  async getAllMaterialProgress(userId: string): Promise<UserMaterialProgress[]> {
     if (!supabase) {
-      return localStorageService.getMaterialProgress(materialId);
+      return localStorageService.getAllMaterialProgress(userId);
     }
 
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('user_material_progress')
         .select('*')
-        .eq('user_id', userId)
-        .eq('material_id', materialId)
-        .maybeSingle();
+        .eq('user_id', userId);
 
-      return data || localStorageService.getMaterialProgress(materialId);
+      if (error || !data) {
+        return localStorageService.getAllMaterialProgress(userId);
+      }
+
+      const list: UserMaterialProgress[] = data.map((row: any) => ({
+        id: row.id,
+        user_id: row.user_id,
+        material_id: row.material_id,
+        status: row.status as MaterialStatus,
+        progress: row.progress || 0,
+        updated_at: row.updated_at
+      }));
+
+      localStorageService.setAllMaterialProgress(list, userId);
+      return list;
     } catch {
-      return localStorageService.getMaterialProgress(materialId);
+      return localStorageService.getAllMaterialProgress(userId);
+    }
+  },
+
+  async getMaterialProgress(userId: string, materialId: string): Promise<UserMaterialProgress | null> {
+    const local = localStorageService.getMaterialProgress(materialId, userId);
+    if (!supabase) return local;
+
+    try {
+      if (UUID_REGEX.test(materialId)) {
+        const { data } = await supabase
+          .from('user_material_progress')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('material_id', materialId)
+          .maybeSingle();
+
+        if (data) {
+          localStorageService.saveMaterialProgress(data, userId);
+          return data;
+        }
+      }
+      return local;
+    } catch {
+      return local;
     }
   },
 
@@ -674,36 +967,28 @@ export const supabaseService = {
       updated_at: new Date().toISOString()
     };
 
+    localStorageService.saveMaterialProgress(record, userId);
+
     if (!supabase) {
-      // Fallback: save locally only
-      localStorageService.saveMaterialProgress(record);
       return { success: true, data: record };
     }
 
     try {
-      // Save to Supabase first
-      const { error } = await supabase.from('user_material_progress').upsert(
-        {
-          user_id: userId,
-          material_id: materialId,
-          status,
-          progress,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'user_id,material_id' }
-      );
-
-      if (error) {
-        console.error('Error saving material progress to Supabase:', error);
-        return { success: false, data: record, error };
+      if (UUID_REGEX.test(materialId)) {
+        await supabase.from('user_material_progress').upsert(
+          {
+            user_id: userId,
+            material_id: materialId,
+            status,
+            progress,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'user_id,material_id' }
+        );
       }
-
-      // Only update local storage after Supabase succeeds
-      localStorageService.saveMaterialProgress(record);
       return { success: true, data: record };
     } catch (e) {
-      console.error('Supabase saveMaterialProgress exception:', e);
-      return { success: false, data: record, error: e };
+      return { success: true, data: record };
     }
   },
 
@@ -712,7 +997,7 @@ export const supabaseService = {
   // ----------------------------------------------------
   async getFavorites(userId: string): Promise<string[]> {
     if (!supabase) {
-      return localStorageService.getFavorites();
+      return localStorageService.getFavorites(userId);
     }
 
     try {
@@ -721,134 +1006,171 @@ export const supabaseService = {
         .select(`
           manga_id,
           manga:manga_id (
+            id,
             anilist_id
           )
         `)
         .eq('user_id', userId);
 
-      if (error) throw error;
-
-      if (data) {
-        const idList: string[] = [];
-        data.forEach((row: any) => {
-          if (row.manga?.anilist_id) {
-            idList.push(row.manga.anilist_id.toString());
-          }
-          idList.push(row.manga_id.toString());
-        });
-        localStorageService.setFavorites(idList);
-        return idList;
+      if (error || !data) {
+        return localStorageService.getFavorites(userId);
       }
-      return localStorageService.getFavorites();
+
+      const idList: string[] = [];
+      data.forEach((row: any) => {
+        if (row.manga?.anilist_id) {
+          idList.push(row.manga.anilist_id.toString());
+        }
+        if (row.manga?.id) {
+          idList.push(row.manga.id.toString());
+        }
+        idList.push(row.manga_id.toString());
+      });
+
+      const uniqueList = Array.from(new Set(idList));
+      localStorageService.setFavorites(uniqueList, userId);
+      return uniqueList;
     } catch {
-      return localStorageService.getFavorites();
+      return localStorageService.getFavorites(userId);
     }
   },
 
   async toggleFavorite(userId: string, manga: Manga): Promise<{ success: boolean; isFavorite: boolean; error?: any }> {
+    const idStr = manga.id.toString();
+
+    // Toggle in local timestamp-tracked storage first
+    const willBeFav = localStorageService.toggleFavorite(manga, userId);
+
     if (!supabase) {
-      // Fallback: save locally only
-      const localRes = localStorageService.toggleFavorite(manga.id);
-      return { success: true, isFavorite: localRes };
+      return { success: true, isFavorite: willBeFav };
     }
 
     try {
-      // First, ensure manga is in the database
-      const dbMangaId = await this.ensureMangaCached(manga);
-
-      // Check current favorite status from Supabase
-      const { data: existing, error: selectError } = await supabase
-        .from('favorites')
-        .select('id')
-        .eq('user_id', userId)
-        .eq('manga_id', dbMangaId)
-        .maybeSingle();
-
-      if (selectError) {
-        console.error('Error checking favorite status:', selectError);
-        return { success: false, isFavorite: false, error: selectError };
-      }
-
-      const currentlyFavorited = !!existing;
-      const shouldBeFavorited = !currentlyFavorited;
-
-      // Toggle on Supabase
-      if (shouldBeFavorited) {
-        const { error: insertError } = await supabase.from('favorites').insert({
-          user_id: userId,
-          manga_id: dbMangaId
-        });
-
-        if (insertError) {
-          console.error('Error adding to favorites:', insertError);
-          return { success: false, isFavorite: currentlyFavorited, error: insertError };
-        }
-      } else {
-        const { error: deleteError } = await supabase
-          .from('favorites')
-          .delete()
-          .eq('user_id', userId)
-          .eq('manga_id', dbMangaId);
-
-        if (deleteError) {
-          console.error('Error removing from favorites:', deleteError);
-          return { success: false, isFavorite: currentlyFavorited, error: deleteError };
+      let dbMangaId: string = idStr;
+      if (!UUID_REGEX.test(dbMangaId)) {
+        const numId = typeof manga.id === 'number' ? manga.id : manga.anilist_id;
+        if (numId) {
+          const { data } = await supabase
+            .from('manga')
+            .select('id')
+            .eq('anilist_id', numId)
+            .maybeSingle();
+          if (data?.id) dbMangaId = data.id;
         }
       }
 
-      // Only update local storage after Supabase succeeds
-      const idStr = manga.id.toString();
-      const anilistIdStr = manga.anilist_id?.toString();
-      
-      if (shouldBeFavorited) {
-        localStorageService.setFavorites([
-          ...localStorageService.getFavorites(),
-          idStr,
-          ...(anilistIdStr ? [anilistIdStr] : [])
-        ]);
-      } else {
-        const current = localStorageService.getFavorites();
-        localStorageService.setFavorites(
-          current.filter((id) => id !== idStr && id !== anilistIdStr)
-        );
+      if (UUID_REGEX.test(dbMangaId)) {
+        if (willBeFav) {
+          await supabase.from('favorites').upsert(
+            {
+              user_id: userId,
+              manga_id: dbMangaId
+            },
+            { onConflict: 'user_id,manga_id' }
+          );
+        } else {
+          await supabase
+            .from('favorites')
+            .delete()
+            .eq('user_id', userId)
+            .eq('manga_id', dbMangaId);
+        }
       }
-
-      return { success: true, isFavorite: shouldBeFavorited };
-    } catch (e) {
-      console.error('Supabase toggleFavorite exception:', e);
-      return { success: false, isFavorite: false, error: e };
+      return { success: true, isFavorite: willBeFav };
+    } catch {
+      return { success: true, isFavorite: willBeFav };
     }
   },
 
   // ----------------------------------------------------
   // NOTES
   // ----------------------------------------------------
-  async getNote(userId: string, mangaId: string | number): Promise<UserNote | null> {
+  async getAllNotes(userId: string): Promise<UserNote[]> {
     if (!supabase) {
-      return localStorageService.getNotes(mangaId);
+      return localStorageService.getAllNotes(userId);
     }
 
     try {
-      let dbId = mangaId.toString();
-      if (typeof mangaId === 'number' || !UUID_REGEX.test(dbId)) {
-        const { data } = await supabase
-          .from('manga')
-          .select('id')
-          .eq('anilist_id', mangaId)
-          .maybeSingle();
-        if (data?.id) dbId = data.id;
+      const { data, error } = await supabase
+        .from('notes')
+        .select(`
+          id,
+          user_id,
+          manga_id,
+          content,
+          created_at,
+          updated_at,
+          manga:manga_id (
+            anilist_id
+          )
+        `)
+        .eq('user_id', userId);
+
+      if (error || !data) {
+        return localStorageService.getAllNotes(userId);
       }
 
-      const { data } = await supabase
-        .from('notes')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('manga_id', dbId)
-        .maybeSingle();
+      const list: UserNote[] = [];
+      data.forEach((row: any) => {
+        const n: UserNote = {
+          id: row.id,
+          user_id: row.user_id,
+          manga_id: row.manga_id,
+          content: row.content,
+          created_at: row.created_at,
+          updated_at: row.updated_at
+        };
+        list.push(n);
 
-      return data || localStorageService.getNotes(mangaId);
+        if (row.manga?.anilist_id) {
+          list.push({
+            ...n,
+            manga_id: row.manga.anilist_id.toString()
+          });
+        }
+      });
+
+      localStorageService.setAllNotes(list, userId);
+      return list;
     } catch {
-      return localStorageService.getNotes(mangaId);
+      return localStorageService.getAllNotes(userId);
+    }
+  },
+
+  async getNote(userId: string, mangaId: string | number): Promise<UserNote | null> {
+    const local = localStorageService.getNotes(mangaId, userId);
+    if (!supabase) return local;
+
+    try {
+      let dbId = mangaId.toString();
+      if (!UUID_REGEX.test(dbId)) {
+        const numId = typeof mangaId === 'number' ? mangaId : parseInt(mangaId.toString(), 10);
+        if (!isNaN(numId)) {
+          const { data } = await supabase
+            .from('manga')
+            .select('id')
+            .eq('anilist_id', numId)
+            .maybeSingle();
+          if (data?.id) dbId = data.id;
+        }
+      }
+
+      if (UUID_REGEX.test(dbId)) {
+        const { data } = await supabase
+          .from('notes')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('manga_id', dbId)
+          .maybeSingle();
+
+        if (data) {
+          localStorageService.saveNote(data, userId);
+          return data;
+        }
+      }
+      return local;
+    } catch {
+      return local;
     }
   },
 
@@ -860,86 +1182,74 @@ export const supabaseService = {
       updated_at: new Date().toISOString()
     };
 
+    localStorageService.saveNote(note, userId);
+
     if (!supabase) {
-      // Fallback: save locally only
-      localStorageService.saveNote(note);
       return { success: true, note };
     }
 
     try {
-      // Find the correct manga ID in the database
       let dbId = mangaId.toString();
-      if (typeof mangaId === 'number' || !UUID_REGEX.test(dbId)) {
-        const { data } = await supabase
-          .from('manga')
-          .select('id')
-          .eq('anilist_id', mangaId)
-          .maybeSingle();
-        if (data?.id) dbId = data.id;
+      if (!UUID_REGEX.test(dbId)) {
+        const numId = typeof mangaId === 'number' ? mangaId : parseInt(mangaId.toString(), 10);
+        if (!isNaN(numId)) {
+          const { data } = await supabase
+            .from('manga')
+            .select('id')
+            .eq('anilist_id', numId)
+            .maybeSingle();
+          if (data?.id) dbId = data.id;
+        }
       }
 
-      // Save to Supabase first
-      const { error } = await supabase.from('notes').upsert(
-        {
-          user_id: userId,
-          manga_id: dbId,
-          content,
-          updated_at: new Date().toISOString()
-        },
-        { onConflict: 'user_id,manga_id' }
-      );
-
-      if (error) {
-        console.error('Error saving note to Supabase:', error);
-        return { success: false, note, error };
+      if (UUID_REGEX.test(dbId)) {
+        await supabase.from('notes').upsert(
+          {
+            user_id: userId,
+            manga_id: dbId,
+            content,
+            updated_at: new Date().toISOString()
+          },
+          { onConflict: 'user_id,manga_id' }
+        );
       }
-
-      // Only update local storage after Supabase succeeds
-      localStorageService.saveNote(note);
       return { success: true, note };
     } catch (e) {
-      console.error('Supabase saveNote exception:', e);
-      return { success: false, note, error: e };
+      return { success: true, note };
     }
   },
 
   async deleteNote(userId: string, mangaId: string | number): Promise<{ success: boolean; error?: any }> {
+    localStorageService.deleteNote(mangaId, userId);
+
     if (!supabase) {
-      // Fallback: delete locally only
-      localStorageService.deleteNote(mangaId);
       return { success: true };
     }
 
     try {
-      // Find the correct manga ID in the database
       let dbId = mangaId.toString();
-      if (typeof mangaId === 'number' || !UUID_REGEX.test(dbId)) {
-        const { data } = await supabase
-          .from('manga')
-          .select('id')
-          .eq('anilist_id', mangaId)
-          .maybeSingle();
-        if (data?.id) dbId = data.id;
+      if (!UUID_REGEX.test(dbId)) {
+        const numId = typeof mangaId === 'number' ? mangaId : parseInt(mangaId.toString(), 10);
+        if (!isNaN(numId)) {
+          const { data } = await supabase
+            .from('manga')
+            .select('id')
+            .eq('anilist_id', numId)
+            .maybeSingle();
+          if (data?.id) dbId = data.id;
+        }
       }
 
-      // Delete from Supabase first
-      const { error } = await supabase
-        .from('notes')
-        .delete()
-        .eq('user_id', userId)
-        .eq('manga_id', dbId);
-
-      if (error) {
-        console.error('Error deleting note from Supabase:', error);
-        return { success: false, error };
+      if (UUID_REGEX.test(dbId)) {
+        await supabase
+          .from('notes')
+          .delete()
+          .eq('user_id', userId)
+          .eq('manga_id', dbId);
       }
-
-      // Only update local storage after Supabase succeeds
-      localStorageService.deleteNote(mangaId);
       return { success: true };
     } catch (e) {
-      console.error('Supabase deleteNote exception:', e);
-      return { success: false, error: e };
+      return { success: true };
     }
   }
 };

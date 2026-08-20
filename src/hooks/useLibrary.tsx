@@ -54,7 +54,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
   children,
   navigate
 }) => {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const [library, setLibrary] = useState<UserLibraryEntry[]>([]);
   const [favorites, setFavorites] = useState<string[]>([]);
   const [allProgress, setAllProgress] = useState<Record<string, UserProgress>>({});
@@ -66,7 +66,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
 
   // Auth Prompt Modal State
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authActionTitle, setAuthActionTitle] = useState('track your reading');
+  const [authActionTitle, setAuthActionTitle] = useState('sync your LetMeCheck library');
 
   // Listen to sync engine
   useEffect(() => {
@@ -77,7 +77,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
     return unsubscribe;
   }, []);
 
-  const requireAuth = (actionDescription = 'track your reading'): boolean => {
+  const requireAuth = (actionDescription = 'sync your LetMeCheck library'): boolean => {
     if (!user) {
       setAuthActionTitle(actionDescription);
       setIsAuthModalOpen(true);
@@ -87,68 +87,114 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
   };
 
   const refreshLibrary = useCallback(async () => {
+    if (!user) {
+      setLibrary([]);
+      setFavorites([]);
+      setAllProgress({});
+      setAllMaterialProgress({});
+      setNotes({});
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      if (user) {
-        const [libData, favData] = await Promise.all([
-          supabaseService.getLibrary(user.id),
-          supabaseService.getFavorites(user.id)
-        ]);
-        setLibrary(libData);
-        setFavorites(favData);
+      const userId = user.id;
+      const [libData, favData, progList, matList, notesList] = await Promise.all([
+        supabaseService.getLibrary(userId),
+        supabaseService.getFavorites(userId),
+        supabaseService.getAllProgress(userId),
+        supabaseService.getAllMaterialProgress(userId),
+        supabaseService.getAllNotes(userId)
+      ]);
 
-        const progList = localStorageService.getAllProgress();
-        const progMap: Record<string, UserProgress> = {};
-        progList.forEach((p) => {
+      setLibrary(libData);
+      setFavorites(favData);
+
+      const progMap: Record<string, UserProgress> = {};
+      progList.forEach((p) => {
+        if (p.manga_id) {
           progMap[p.manga_id.toString()] = p;
-        });
-        setAllProgress(progMap);
+        }
+      });
+      setAllProgress(progMap);
 
-        const matList = localStorageService.getAllMaterialProgress();
-        const matMap: Record<string, UserMaterialProgress> = {};
-        matList.forEach((m) => {
+      const matMap: Record<string, UserMaterialProgress> = {};
+      matList.forEach((m) => {
+        if (m.material_id) {
           matMap[m.material_id] = m;
-        });
-        setAllMaterialProgress(matMap);
-      } else {
-        // Strict: Logged-out users have empty library and favorites
-        setLibrary([]);
-        setFavorites([]);
-        setAllProgress({});
-        setAllMaterialProgress({});
-        setNotes({});
-      }
+        }
+      });
+      setAllMaterialProgress(matMap);
+
+      const notesMap: Record<string, UserNote> = {};
+      notesList.forEach((n) => {
+        if (n.manga_id) {
+          notesMap[n.manga_id.toString()] = n;
+        }
+      });
+      setNotes(notesMap);
     } catch (e) {
-      console.warn('Failed to load library:', e);
+      console.warn('Failed to load user library data:', e);
     } finally {
       setLoading(false);
     }
   }, [user]);
 
   useEffect(() => {
-    refreshLibrary();
-  }, [refreshLibrary]);
+    if (!authLoading) {
+      refreshLibrary();
+    }
+  }, [authLoading, refreshLibrary]);
 
   const getEntryForManga = (mangaIdOrObj: string | number | Manga) => {
     if (!user) return undefined;
-    const id = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null ? mangaIdOrObj.id : mangaIdOrObj;
-    const anilistId = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null ? mangaIdOrObj.anilist_id : (typeof mangaIdOrObj === 'number' ? mangaIdOrObj : undefined);
+    const isObj = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null;
+    const id = isObj ? (mangaIdOrObj as Manga).id : mangaIdOrObj;
+    const anilistId = isObj
+      ? (mangaIdOrObj as Manga).anilist_id
+      : typeof mangaIdOrObj === 'number'
+      ? mangaIdOrObj
+      : !isNaN(Number(mangaIdOrObj))
+      ? Number(mangaIdOrObj)
+      : undefined;
+
+    const idStr = id !== undefined && id !== null ? id.toString() : '';
+    const anilistStr = anilistId !== undefined ? anilistId.toString() : '';
 
     return library.find((e) => {
-      if (id && e.manga_id.toString() === id.toString()) return true;
-      if (anilistId && e.manga?.anilist_id === anilistId) return true;
-      if (id && e.manga?.id && e.manga.id.toString() === id.toString()) return true;
+      if (idStr && e.manga_id.toString() === idStr) return true;
+      if (anilistStr && e.manga?.anilist_id && e.manga.anilist_id.toString() === anilistStr) return true;
+      if (idStr && e.manga?.id && e.manga.id.toString() === idStr) return true;
+      if (anilistStr && e.manga_id.toString() === anilistStr) return true;
       return false;
     });
   };
 
   const getProgressForManga = (mangaIdOrObj: string | number | Manga) => {
     if (!user) return undefined;
-    const id = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null ? mangaIdOrObj.id : mangaIdOrObj;
-    const anilistId = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null ? mangaIdOrObj.anilist_id : (typeof mangaIdOrObj === 'number' ? mangaIdOrObj : undefined);
+    const isObj = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null;
+    const id = isObj ? (mangaIdOrObj as Manga).id : mangaIdOrObj;
+    const anilistId = isObj
+      ? (mangaIdOrObj as Manga).anilist_id
+      : typeof mangaIdOrObj === 'number'
+      ? mangaIdOrObj
+      : !isNaN(Number(mangaIdOrObj))
+      ? Number(mangaIdOrObj)
+      : undefined;
 
-    if (id && allProgress[id.toString()]) return allProgress[id.toString()];
-    if (anilistId && allProgress[anilistId.toString()]) return allProgress[anilistId.toString()];
+    const idStr = id !== undefined && id !== null ? id.toString() : '';
+    const anilistStr = anilistId !== undefined ? anilistId.toString() : '';
+
+    if (idStr && allProgress[idStr]) return allProgress[idStr];
+    if (anilistStr && allProgress[anilistStr]) return allProgress[anilistStr];
+
+    // Check if manga is in library and mapped by its database ID
+    const entry = getEntryForManga(mangaIdOrObj);
+    if (entry && entry.manga_id && allProgress[entry.manga_id.toString()]) {
+      return allProgress[entry.manga_id.toString()];
+    }
+
     return undefined;
   };
 
@@ -159,31 +205,58 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
 
   const getNoteForManga = (mangaIdOrObj: string | number | Manga) => {
     if (!user) return undefined;
-    const id = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null ? mangaIdOrObj.id : mangaIdOrObj;
-    const idStr = id ? id.toString() : '';
+    const isObj = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null;
+    const id = isObj ? (mangaIdOrObj as Manga).id : mangaIdOrObj;
+    const anilistId = isObj
+      ? (mangaIdOrObj as Manga).anilist_id
+      : typeof mangaIdOrObj === 'number'
+      ? mangaIdOrObj
+      : !isNaN(Number(mangaIdOrObj))
+      ? Number(mangaIdOrObj)
+      : undefined;
+
+    const idStr = id !== undefined && id !== null ? id.toString() : '';
+    const anilistStr = anilistId !== undefined ? anilistId.toString() : '';
+
     if (idStr && notes[idStr]) return notes[idStr];
-    if (idStr) {
-      const local = localStorageService.getNotes(idStr);
-      if (local) {
-        setNotes((prev) => ({ ...prev, [idStr]: local }));
-        return local;
-      }
+    if (anilistStr && notes[anilistStr]) return notes[anilistStr];
+
+    const entry = getEntryForManga(mangaIdOrObj);
+    if (entry && entry.manga_id && notes[entry.manga_id.toString()]) {
+      return notes[entry.manga_id.toString()];
     }
+
     return undefined;
   };
 
   const isMangaFavorite = (mangaIdOrObj: string | number | Manga) => {
     if (!user) return false;
-    const id = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null ? mangaIdOrObj.id : mangaIdOrObj;
-    const anilistId = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null ? mangaIdOrObj.anilist_id : (typeof mangaIdOrObj === 'number' ? mangaIdOrObj : undefined);
+    const isObj = typeof mangaIdOrObj === 'object' && mangaIdOrObj !== null;
+    const id = isObj ? (mangaIdOrObj as Manga).id : mangaIdOrObj;
+    const anilistId = isObj
+      ? (mangaIdOrObj as Manga).anilist_id
+      : typeof mangaIdOrObj === 'number'
+      ? mangaIdOrObj
+      : !isNaN(Number(mangaIdOrObj))
+      ? Number(mangaIdOrObj)
+      : undefined;
 
-    if (id && favorites.includes(id.toString())) return true;
-    if (anilistId && favorites.includes(anilistId.toString())) return true;
+    const idStr = id !== undefined && id !== null ? id.toString() : '';
+    const anilistStr = anilistId !== undefined ? anilistId.toString() : '';
+
+    if (idStr && favorites.includes(idStr)) return true;
+    if (anilistStr && favorites.includes(anilistStr)) return true;
+
+    const entry = getEntryForManga(mangaIdOrObj);
+    if (entry && entry.manga_id && favorites.includes(entry.manga_id.toString())) {
+      return true;
+    }
+
     return false;
   };
 
   const updateStatus = async (manga: Manga, status: ReadingStatus): Promise<boolean> => {
-    if (!requireAuth('save manga to your library')) {
+    if (!requireAuth('save titles to your library')) {
       return false;
     }
 
@@ -200,17 +273,17 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
       const idx = prev.findIndex(
         (e) =>
           e.manga_id.toString() === manga.id.toString() ||
-          (e.manga?.anilist_id && e.manga.anilist_id === manga.anilist_id)
+          (e.manga?.anilist_id && manga.anilist_id && e.manga.anilist_id === manga.anilist_id) ||
+          (e.manga?.id && manga.id && e.manga.id.toString() === manga.id.toString())
       );
       if (idx >= 0) {
         const next = [...prev];
-        next[idx] = { ...next[idx], status, manga };
+        next[idx] = { ...next[idx], status, manga: entry.manga || manga, updated_at: new Date().toISOString() };
         return next;
       }
       return [entry, ...prev];
     });
 
-    syncEngine.enqueue('UPSERT_LIBRARY', { manga, status });
     return true;
   };
 
@@ -231,11 +304,11 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
       prev.filter(
         (e) =>
           e.manga_id.toString() !== mangaId.toString() &&
+          e.manga?.id?.toString() !== mangaId.toString() &&
           e.manga?.anilist_id?.toString() !== mangaId.toString()
       )
     );
 
-    syncEngine.enqueue('REMOVE_LIBRARY', { mangaId });
     return true;
   };
 
@@ -244,13 +317,13 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
     chapters: number,
     volumes?: number
   ): Promise<boolean> => {
-    if (!requireAuth('track your chapter progress')) {
+    if (!requireAuth('track your watch and reading progress')) {
       return false;
     }
 
     const userId = user!.id;
     const mangaIdStr = manga.id.toString();
-    const existingProg = allProgress[mangaIdStr];
+    const existingProg = getProgressForManga(manga);
     const vols = volumes !== undefined ? volumes : existingProg?.volumes_read || 0;
     const chaps = Math.max(0, chapters);
 
@@ -261,10 +334,17 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
       return false;
     }
 
-    setAllProgress((prev) => ({ ...prev, [mangaIdStr]: result.progress }));
+    const progRecord = result.progress;
+    setAllProgress((prev) => {
+      const next = { ...prev, [mangaIdStr]: progRecord };
+      if (manga.anilist_id) {
+        next[manga.anilist_id.toString()] = progRecord;
+      }
+      return next;
+    });
 
     // Progression logic
-    const currentEntry = getEntryForManga(manga.id);
+    const currentEntry = getEntryForManga(manga);
     let newStatus: ReadingStatus | null = null;
 
     if (!currentEntry) {
@@ -284,12 +364,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
       await updateStatus(manga, newStatus);
     }
 
-    syncEngine.enqueue('SAVE_PROGRESS', {
-      mangaId: manga.id,
-      chaptersRead: chaps,
-      volumesRead: vols
-    });
-
     return true;
   };
 
@@ -298,7 +372,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
     status: MaterialStatus,
     progress = 0
   ): Promise<boolean> => {
-    if (!requireAuth('track adaptation & material progress')) {
+    if (!requireAuth('track adaptation, movie & material progress')) {
       return false;
     }
 
@@ -311,8 +385,6 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
     }
 
     setAllMaterialProgress((prev) => ({ ...prev, [materialId]: result.data }));
-
-    syncEngine.enqueue('SAVE_MATERIAL_PROGRESS', { materialId, status, progress });
     return true;
   };
 
@@ -335,13 +407,12 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
 
     setFavorites((prev) => {
       if (isFav) {
-        return [...prev, idStr, ...(anilistIdStr ? [anilistIdStr] : [])];
+        return Array.from(new Set([idStr, ...(anilistIdStr ? [anilistIdStr] : []), ...prev]));
       } else {
         return prev.filter((id) => id !== idStr && id !== anilistIdStr);
       }
     });
 
-    syncEngine.enqueue('TOGGLE_FAVORITE', { manga, isFavorite: isFav });
     return isFav;
   };
 
@@ -358,9 +429,8 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
       return false;
     }
 
-    setNotes((prev) => ({ ...prev, [mangaId.toString()]: result.note }));
-
-    syncEngine.enqueue('SAVE_NOTE', { mangaId, content });
+    const idStr = mangaId.toString();
+    setNotes((prev) => ({ ...prev, [idStr]: result.note }));
     return true;
   };
 
@@ -377,13 +447,13 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
       return false;
     }
 
+    const idStr = mangaId.toString();
     setNotes((prev) => {
       const next = { ...prev };
-      delete next[mangaId.toString()];
+      delete next[idStr];
       return next;
     });
 
-    syncEngine.enqueue('DELETE_NOTE', { mangaId });
     return true;
   };
 
@@ -402,7 +472,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
     completed: library.filter((e) => e.status === 'Completed').length,
     onHold: library.filter((e) => e.status === 'On Hold').length,
     dropped: library.filter((e) => e.status === 'Dropped').length,
-    favorites: library.filter((e) => e.is_favorite || favorites.includes(e.manga_id.toString())).length || favorites.length,
+    favorites: favorites.length,
     chaptersRead: chaptersReadCount,
     volumesRead: volumesReadCount
   };
@@ -433,7 +503,7 @@ export const LibraryProvider: React.FC<{ children: ReactNode; navigate?: (route:
         allProgress,
         allMaterialProgress,
         notes,
-        loading,
+        loading: loading || authLoading,
         stats,
         syncStatus,
         pendingSyncCount,

@@ -10,17 +10,18 @@ import {
 } from '../types';
 import { SyncQueueItem } from './sync';
 
-const STORAGE_KEYS = {
+const BASE_KEYS = {
   USER: 'letmecheck_user_v1',
-  LIBRARY: 'letmecheck_library_v1',
-  PROGRESS: 'letmecheck_progress_v1',
-  MATERIAL_PROGRESS: 'letmecheck_mat_progress_v1',
-  FAVORITES: 'letmecheck_favorites_v1',
-  NOTES: 'letmecheck_notes_v1',
-  SYNC_QUEUE: 'letmecheck_sync_queue_v1',
   SEARCH_CACHE: 'letmecheck_search_cache_v1',
   RECENT_SEARCHES: 'letmecheck_recent_searches_v1'
 };
+
+function getUserScopedKey(userId: string | undefined | null, key: string): string {
+  if (userId && userId.trim()) {
+    return `letmecheck_u_${userId.trim()}_${key}_v2`;
+  }
+  return `letmecheck_${key}_v1`;
+}
 
 function safeGetItem<T>(key: string, defaultValue: T): T {
   try {
@@ -56,31 +57,46 @@ export const localStorageService = {
   // USER SESSION
   // ---------------------------------------------
   getLocalUser(): UserProfile | null {
-    return safeGetItem<UserProfile | null>(STORAGE_KEYS.USER, null);
+    return safeGetItem<UserProfile | null>(BASE_KEYS.USER, null);
   },
 
   setLocalUser(user: UserProfile | null): void {
     if (user) {
-      safeSetItem(STORAGE_KEYS.USER, user);
+      safeSetItem(BASE_KEYS.USER, user);
     } else {
-      safeRemoveItem(STORAGE_KEYS.USER);
+      safeRemoveItem(BASE_KEYS.USER);
     }
   },
 
-  // ---------------------------------------------
-  // LIBRARY
-  // ---------------------------------------------
-  getLibrary(): UserLibraryEntry[] {
-    return safeGetItem<UserLibraryEntry[]>(STORAGE_KEYS.LIBRARY, []);
+  getCurrentUserId(): string | null {
+    const user = this.getLocalUser();
+    return user?.id || null;
   },
 
-  setLibrary(list: UserLibraryEntry[]): void {
-    safeSetItem(STORAGE_KEYS.LIBRARY, list);
+  // ---------------------------------------------
+  // USER-SCOPED LIBRARY
+  // ---------------------------------------------
+  getLibrary(userId?: string | null): UserLibraryEntry[] {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'library');
+    return safeGetItem<UserLibraryEntry[]>(key, []);
   },
 
-  saveLibraryEntry(entry: UserLibraryEntry): UserLibraryEntry[] {
-    const list = this.getLibrary();
-    const idx = list.findIndex((e) => e.manga_id.toString() === entry.manga_id.toString());
+  setLibrary(list: UserLibraryEntry[], userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'library');
+    safeSetItem(key, list);
+  },
+
+  saveLibraryEntry(entry: UserLibraryEntry, userId?: string | null): UserLibraryEntry[] {
+    const uid = userId || entry.user_id || this.getCurrentUserId();
+    const list = this.getLibrary(uid);
+    const idx = list.findIndex(
+      (e) =>
+        e.manga_id.toString() === entry.manga_id.toString() ||
+        (e.manga?.anilist_id && entry.manga?.anilist_id && e.manga.anilist_id === entry.manga.anilist_id) ||
+        (e.manga?.id && entry.manga?.id && e.manga.id.toString() === entry.manga.id.toString())
+    );
     const now = new Date().toISOString();
     const updated = {
       ...entry,
@@ -89,189 +105,338 @@ export const localStorageService = {
     if (idx >= 0) {
       list[idx] = { ...list[idx], ...updated };
     } else {
-      list.push({ ...updated, created_at: now });
+      list.unshift({ ...updated, created_at: now });
     }
-    safeSetItem(STORAGE_KEYS.LIBRARY, list);
+    this.setLibrary(list, uid);
     return list;
   },
 
-  removeLibraryEntry(mangaId: string | number): UserLibraryEntry[] {
-    const list = this.getLibrary().filter((e) => e.manga_id.toString() !== mangaId.toString());
-    safeSetItem(STORAGE_KEYS.LIBRARY, list);
+  removeLibraryEntry(mangaId: string | number, userId?: string | null): UserLibraryEntry[] {
+    const uid = userId || this.getCurrentUserId();
+    const list = this.getLibrary(uid).filter(
+      (e) =>
+        e.manga_id.toString() !== mangaId.toString() &&
+        e.manga?.id?.toString() !== mangaId.toString() &&
+        e.manga?.anilist_id?.toString() !== mangaId.toString()
+    );
+    this.setLibrary(list, uid);
     return list;
   },
 
   // ---------------------------------------------
-  // READING PROGRESS
+  // USER-SCOPED READING PROGRESS
   // ---------------------------------------------
-  getProgress(mangaId: string | number): UserProgress | null {
-    const list = this.getAllProgress();
-    return list.find((p) => p.manga_id.toString() === mangaId.toString()) || null;
+  getProgress(mangaId: string | number, userId?: string | null): UserProgress | null {
+    const uid = userId || this.getCurrentUserId();
+    const list = this.getAllProgress(uid);
+    const idStr = mangaId.toString();
+    return (
+      list.find(
+        (p) => p.manga_id.toString() === idStr || (typeof mangaId === 'number' && p.manga_id === mangaId.toString())
+      ) || null
+    );
   },
 
-  getAllProgress(): UserProgress[] {
-    return safeGetItem<UserProgress[]>(STORAGE_KEYS.PROGRESS, []);
+  getAllProgress(userId?: string | null): UserProgress[] {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'progress');
+    return safeGetItem<UserProgress[]>(key, []);
   },
 
-  setAllProgress(list: UserProgress[]): void {
-    safeSetItem(STORAGE_KEYS.PROGRESS, list);
+  setAllProgress(list: UserProgress[], userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'progress');
+    safeSetItem(key, list);
   },
 
-  saveProgress(progress: UserProgress): void {
-    const list = this.getAllProgress();
-    const idx = list.findIndex((p) => p.manga_id.toString() === progress.manga_id.toString());
-    const updated = { ...progress, updated_at: new Date().toISOString() };
+  saveProgress(progress: UserProgress, userId?: string | null): void {
+    const uid = userId || progress.user_id || this.getCurrentUserId();
+    const list = this.getAllProgress(uid);
+    const idStr = progress.manga_id.toString();
+    const idx = list.findIndex((p) => p.manga_id.toString() === idStr);
+    const updated = { ...progress, user_id: uid || progress.user_id, updated_at: new Date().toISOString() };
     if (idx >= 0) {
       list[idx] = updated;
     } else {
       list.push(updated);
     }
-    safeSetItem(STORAGE_KEYS.PROGRESS, list);
+    this.setAllProgress(list, uid);
   },
 
   // ---------------------------------------------
-  // MATERIAL PROGRESS
+  // USER-SCOPED MATERIAL PROGRESS
   // ---------------------------------------------
-  getMaterialProgress(materialId: string): UserMaterialProgress | null {
-    const list = this.getAllMaterialProgress();
+  getMaterialProgress(materialId: string, userId?: string | null): UserMaterialProgress | null {
+    const uid = userId || this.getCurrentUserId();
+    const list = this.getAllMaterialProgress(uid);
     return list.find((p) => p.material_id === materialId) || null;
   },
 
-  getAllMaterialProgress(): UserMaterialProgress[] {
-    return safeGetItem<UserMaterialProgress[]>(STORAGE_KEYS.MATERIAL_PROGRESS, []);
+  getAllMaterialProgress(userId?: string | null): UserMaterialProgress[] {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'mat_progress');
+    return safeGetItem<UserMaterialProgress[]>(key, []);
   },
 
-  setAllMaterialProgress(list: UserMaterialProgress[]): void {
-    safeSetItem(STORAGE_KEYS.MATERIAL_PROGRESS, list);
+  setAllMaterialProgress(list: UserMaterialProgress[], userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'mat_progress');
+    safeSetItem(key, list);
   },
 
-  saveMaterialProgress(progress: UserMaterialProgress): void {
-    const list = this.getAllMaterialProgress();
+  saveMaterialProgress(progress: UserMaterialProgress, userId?: string | null): void {
+    const uid = userId || progress.user_id || this.getCurrentUserId();
+    const list = this.getAllMaterialProgress(uid);
     const idx = list.findIndex((p) => p.material_id === progress.material_id);
-    const updated = { ...progress, updated_at: new Date().toISOString() };
+    const updated = { ...progress, user_id: uid || progress.user_id, updated_at: new Date().toISOString() };
     if (idx >= 0) {
       list[idx] = updated;
     } else {
       list.push(updated);
     }
-    safeSetItem(STORAGE_KEYS.MATERIAL_PROGRESS, list);
+    this.setAllMaterialProgress(list, uid);
   },
 
   // ---------------------------------------------
-  // FAVORITES
+  // USER-SCOPED FAVORITES (Timestamp-Tracked)
   // ---------------------------------------------
-  getFavorites(): string[] {
-    return safeGetItem<string[]>(STORAGE_KEYS.FAVORITES, []);
+  getFavoriteEntries(userId?: string | null): Array<{ manga_id: string; created_at: string; manga?: Manga }> {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'favorite_entries');
+    const entries = safeGetItem<Array<{ manga_id: string; created_at: string; manga?: Manga }>>(key, []);
+    return [...entries].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
   },
 
-  setFavorites(list: string[]): void {
-    safeSetItem(STORAGE_KEYS.FAVORITES, list);
+  setFavoriteEntries(
+    entries: Array<{ manga_id: string; created_at: string; manga?: Manga }>,
+    userId?: string | null
+  ): void {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'favorite_entries');
+    const sorted = [...entries].sort((a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime());
+    safeSetItem(key, sorted);
+
+    // Keep legacy string[] key in sync with newest-first order
+    const legacyKey = getUserScopedKey(uid, 'favorites');
+    safeSetItem(legacyKey, sorted.map((e) => e.manga_id));
   },
 
-  toggleFavorite(mangaId: string | number): boolean {
-    const list = this.getFavorites();
+  getFavorites(userId?: string | null): string[] {
+    const uid = userId || this.getCurrentUserId();
+    const entries = this.getFavoriteEntries(uid);
+    if (entries.length > 0) {
+      return entries.map((e) => e.manga_id);
+    }
+    const legacyKey = getUserScopedKey(uid, 'favorites');
+    return safeGetItem<string[]>(legacyKey, []);
+  },
+
+  setFavorites(list: string[], userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    const currentEntries = this.getFavoriteEntries(uid);
+    const now = new Date().toISOString();
+
+    const newEntries: Array<{ manga_id: string; created_at: string; manga?: Manga }> = [];
+    const seen = new Set<string>();
+
+    list.forEach((id, index) => {
+      const idStr = id.toString();
+      if (seen.has(idStr)) return;
+      seen.add(idStr);
+
+      const existing = currentEntries.find((e) => e.manga_id.toString() === idStr);
+      if (existing) {
+        newEntries.push(existing);
+      } else {
+        // preserve list ordering by descending fake offsets if newly mass-set
+        const simulatedTime = new Date(Date.now() - index * 1000).toISOString();
+        newEntries.push({ manga_id: idStr, created_at: simulatedTime });
+      }
+    });
+
+    this.setFavoriteEntries(newEntries, uid);
+  },
+
+  toggleFavorite(mangaOrId: Manga | string | number, userId?: string | null): boolean {
+    const uid = userId || this.getCurrentUserId();
+    const idStr = typeof mangaOrId === 'object' && mangaOrId !== null ? mangaOrId.id.toString() : mangaOrId.toString();
+    const anilistIdStr = typeof mangaOrId === 'object' && mangaOrId !== null && mangaOrId.anilist_id ? mangaOrId.anilist_id.toString() : null;
+    const mangaObj = typeof mangaOrId === 'object' && mangaOrId !== null ? (mangaOrId as Manga) : undefined;
+
+    const entries = this.getFavoriteEntries(uid);
+    const existingIndex = entries.findIndex(
+      (e) => e.manga_id.toString() === idStr || (Boolean(anilistIdStr) && e.manga_id.toString() === anilistIdStr)
+    );
+
+    const isCurrentlyFav = existingIndex >= 0;
+
+    if (isCurrentlyFav) {
+      // Remove favorite
+      const updated = entries.filter(
+        (e) => e.manga_id.toString() !== idStr && (!anilistIdStr || e.manga_id.toString() !== anilistIdStr)
+      );
+      this.setFavoriteEntries(updated, uid);
+      return false;
+    } else {
+      // Add favorite at top with current timestamp
+      const newEntry = {
+        manga_id: idStr,
+        created_at: new Date().toISOString(),
+        manga: mangaObj
+      };
+      this.setFavoriteEntries([newEntry, ...entries], uid);
+      return true;
+    }
+  },
+
+  isFavorite(mangaId: string | number, userId?: string | null): boolean {
+    const uid = userId || this.getCurrentUserId();
+    return this.getFavorites(uid).includes(mangaId.toString());
+  },
+
+  // ---------------------------------------------
+  // USER-SCOPED NOTES
+  // ---------------------------------------------
+  getNotes(mangaId: string | number, userId?: string | null): UserNote | null {
+    const uid = userId || this.getCurrentUserId();
+    const list = this.getAllNotes(uid);
     const idStr = mangaId.toString();
-    const exists = list.includes(idStr);
-    const updated = exists ? list.filter((id) => id !== idStr) : [...list, idStr];
-    safeSetItem(STORAGE_KEYS.FAVORITES, updated);
-    return !exists;
+    return list.find((n) => n.manga_id.toString() === idStr) || null;
   },
 
-  isFavorite(mangaId: string | number): boolean {
-    return this.getFavorites().includes(mangaId.toString());
+  getAllNotes(userId?: string | null): UserNote[] {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'notes');
+    return safeGetItem<UserNote[]>(key, []);
   },
 
-  // ---------------------------------------------
-  // NOTES
-  // ---------------------------------------------
-  getNotes(mangaId: string | number): UserNote | null {
-    const list = safeGetItem<UserNote[]>(STORAGE_KEYS.NOTES, []);
-    return list.find((n) => n.manga_id.toString() === mangaId.toString()) || null;
+  setAllNotes(list: UserNote[], userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'notes');
+    safeSetItem(key, list);
   },
 
-  getAllNotes(): UserNote[] {
-    return safeGetItem<UserNote[]>(STORAGE_KEYS.NOTES, []);
-  },
-
-  setAllNotes(list: UserNote[]): void {
-    safeSetItem(STORAGE_KEYS.NOTES, list);
-  },
-
-  saveNote(note: UserNote): void {
-    const list = this.getAllNotes();
+  saveNote(note: UserNote, userId?: string | null): void {
+    const uid = userId || note.user_id || this.getCurrentUserId();
+    const list = this.getAllNotes(uid);
     const idx = list.findIndex((n) => n.manga_id.toString() === note.manga_id.toString());
     const now = new Date().toISOString();
+    const updated = { ...note, user_id: uid || note.user_id, updated_at: now };
     if (idx >= 0) {
-      list[idx] = { ...note, updated_at: now };
+      list[idx] = updated;
     } else {
-      list.push({ ...note, created_at: now, updated_at: now });
+      list.push({ ...updated, created_at: now });
     }
-    safeSetItem(STORAGE_KEYS.NOTES, list);
+    this.setAllNotes(list, uid);
   },
 
-  deleteNote(mangaId: string | number): void {
-    const list = this.getAllNotes();
+  deleteNote(mangaId: string | number, userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    const list = this.getAllNotes(uid);
     const updated = list.filter((n) => n.manga_id.toString() !== mangaId.toString());
-    safeSetItem(STORAGE_KEYS.NOTES, updated);
+    this.setAllNotes(updated, uid);
   },
 
   // ---------------------------------------------
-  // SYNC QUEUE
+  // SYNC QUEUE (User-scoped)
   // ---------------------------------------------
-  getSyncQueue(): SyncQueueItem[] {
-    return safeGetItem<SyncQueueItem[]>(STORAGE_KEYS.SYNC_QUEUE, []);
+  getSyncQueue(userId?: string | null): SyncQueueItem[] {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'sync_queue');
+    return safeGetItem<SyncQueueItem[]>(key, []);
   },
 
-  setSyncQueue(queue: SyncQueueItem[]): void {
-    safeSetItem(STORAGE_KEYS.SYNC_QUEUE, queue);
+  setSyncQueue(queue: SyncQueueItem[], userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'sync_queue');
+    safeSetItem(key, queue);
   },
 
-  addToSyncQueue(item: SyncQueueItem): void {
-    const queue = this.getSyncQueue();
-    // Simple deduplication for matching mangaId / materialId
+  addToSyncQueue(item: SyncQueueItem, userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    const queue = this.getSyncQueue(uid);
     const filtered = queue.filter(
       (q) => !(q.type === item.type && JSON.stringify(q.payload) === JSON.stringify(item.payload))
     );
     filtered.push(item);
-    this.setSyncQueue(filtered);
+    this.setSyncQueue(filtered, uid);
   },
 
-  clearSyncQueue(): void {
-    safeRemoveItem(STORAGE_KEYS.SYNC_QUEUE);
+  clearSyncQueue(userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    const key = getUserScopedKey(uid, 'sync_queue');
+    safeRemoveItem(key);
   },
 
   // ---------------------------------------------
-  // RECENT SEARCHES
+  // RECENT SEARCHES (Global device preference)
   // ---------------------------------------------
   getRecentSearches(): string[] {
-    return safeGetItem<string[]>(STORAGE_KEYS.RECENT_SEARCHES, []);
+    return safeGetItem<string[]>(BASE_KEYS.RECENT_SEARCHES, []);
   },
 
   addRecentSearch(query: string): string[] {
     const trimmed = query.trim();
     if (!trimmed || trimmed.length < 2) return this.getRecentSearches();
-    const list = this.getRecentSearches().filter(
-      (q) => q.toLowerCase() !== trimmed.toLowerCase()
-    );
+    const list = this.getRecentSearches().filter((q) => q.toLowerCase() !== trimmed.toLowerCase());
     list.unshift(trimmed);
     const capped = list.slice(0, 8);
-    safeSetItem(STORAGE_KEYS.RECENT_SEARCHES, capped);
+    safeSetItem(BASE_KEYS.RECENT_SEARCHES, capped);
     return capped;
   },
 
   clearRecentSearches(): void {
-    safeRemoveItem(STORAGE_KEYS.RECENT_SEARCHES);
+    safeRemoveItem(BASE_KEYS.RECENT_SEARCHES);
   },
 
-  // Clear all local personal data (e.g. on logout)
+  // Clear current active session (leaves user data safely in per-user partitions)
   clearUserData(): void {
-    safeRemoveItem(STORAGE_KEYS.USER);
-    safeRemoveItem(STORAGE_KEYS.LIBRARY);
-    safeRemoveItem(STORAGE_KEYS.PROGRESS);
-    safeRemoveItem(STORAGE_KEYS.MATERIAL_PROGRESS);
-    safeRemoveItem(STORAGE_KEYS.FAVORITES);
-    safeRemoveItem(STORAGE_KEYS.NOTES);
-    safeRemoveItem(STORAGE_KEYS.SYNC_QUEUE);
-    safeRemoveItem(STORAGE_KEYS.RECENT_SEARCHES);
+    safeRemoveItem(BASE_KEYS.USER);
+  },
+
+  // Completely purge all local storage and session data belonging to a deleted user
+  purgeUserLocalData(userId?: string | null): void {
+    const uid = userId || this.getCurrentUserId();
+    if (uid) {
+      safeRemoveItem(getUserScopedKey(uid, 'library'));
+      safeRemoveItem(getUserScopedKey(uid, 'progress'));
+      safeRemoveItem(getUserScopedKey(uid, 'mat_progress'));
+      safeRemoveItem(getUserScopedKey(uid, 'favorites'));
+      safeRemoveItem(getUserScopedKey(uid, 'notes'));
+      safeRemoveItem(getUserScopedKey(uid, 'sync_queue'));
+
+      // Remove any dynamic local keys matching this user id
+      try {
+        if (typeof localStorage !== 'undefined') {
+          const userPrefix = `letmecheck_u_${uid.trim()}_`;
+          const keysToDelete: string[] = [];
+          for (let i = 0; i < localStorage.length; i++) {
+            const k = localStorage.key(i);
+            if (k && k.startsWith(userPrefix)) {
+              keysToDelete.push(k);
+            }
+          }
+          keysToDelete.forEach((k) => safeRemoveItem(k));
+        }
+      } catch (err) {
+        console.warn('Error purging user-scoped keys from localStorage:', err);
+      }
+    }
+
+    // Clear user session profile
+    safeRemoveItem(BASE_KEYS.USER);
+
+    // Clear persisted search history and search query cache
+    safeRemoveItem(BASE_KEYS.RECENT_SEARCHES);
+    safeRemoveItem(BASE_KEYS.SEARCH_CACHE);
+
+    // Clear session storage if available
+    try {
+      if (typeof sessionStorage !== 'undefined') {
+        sessionStorage.clear();
+      }
+    } catch (e) {
+      console.warn('Error clearing sessionStorage:', e);
+    }
   }
 };

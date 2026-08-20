@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-eimport { chromium } from '@playwright/test';
+import { chromium } from '@playwright/test';
 
 const BASE_URL = 'http://localhost:3001/LetMeCheck';
 const TEST_EMAIL = `test-${Date.now()}@example.com`;
