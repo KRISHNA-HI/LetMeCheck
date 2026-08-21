@@ -1196,129 +1196,189 @@ class ContentService {
 
   /**
    * Dedicated Trending Movies & TV Series Service (Home Page Trending)
-   * Fetches genuine trending data directly from TMDB for Movies and TV/Web Series.
-   * Excludes Manga, Manhwa, Manhua, Anime, and AniList content.
-   * Preserves both Movie and TV types with authentic poster paths.
+   * Fetches genuine trending data directly from TMDB for Movies and TV Series (/3/trending/movie/day & /3/trending/tv/day).
+   * Strictly excludes Manga, Manhwa, Manhua, Anime, and AniList content.
+   * Preserves media type (movie vs tv_series) and authentic poster paths.
+   * Returns empty array if TMDB request is unavailable or fails (no static catalog fallback).
    */
-  async getTrendingMoviesAndTv(limit = 10): Promise<ContentItem[]> {
-    const items: ContentItem[] = [];
-    const seenIds = new Set<string>();
-    const seenTitles = new Set<string>();
-
-    const addItem = (item: ContentItem) => {
-      if (!item || !item.id || items.length >= limit) return;
-      // Strictly enforce Movies, TV Series, Web Series, and live-action Dramas only
-      if (
-        item.content_type !== 'movie' &&
-        item.content_type !== 'tv_series' &&
-        item.content_type !== 'web_series' &&
-        item.content_type !== 'drama'
-      ) {
-        return;
-      }
-      // Strictly exclude any animation/anime from Japan
-      const genres = (item.genres || []).map((g) =>
-        typeof g === 'string' ? g.toLowerCase() : g.name?.toLowerCase() || ''
-      );
-      const countries = (item.countries || []).map((c: any) =>
-        typeof c === 'string' ? c : c?.code || c?.iso_3166_1 || c?.name || ''
-      );
-      if (
-        (item.primary_language === 'ja' || countries.includes('JP') || countries.includes('Japan')) &&
-        genres.some((g) => g.includes('anim'))
-      ) {
-        return;
-      }
-
-      const idKey = String(item.id).toLowerCase();
-      if (seenIds.has(idKey)) return;
-
-      const titleKey = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-      if (titleKey && seenTitles.has(titleKey)) return;
-
-      // Ensure artwork is securely resolved with real image or neutral placeholder
-      const resolvedPoster = resolveContentArtwork(item);
-      item.poster_url = resolvedPoster;
-      item.cover_url = resolvedPoster;
-
-      seenIds.add(idKey);
-      if (titleKey) seenTitles.add(titleKey);
-      items.push(item);
-    };
-
-    // 1. Direct TMDB Trending API fetch (Movies + TV series)
-    if (tmdbProvider.isAvailable()) {
-      try {
-        const [trendingMovies, trendingTv] = await Promise.allSettled([
-          tmdbProvider.getTrending('movie', 'day', 1),
-          tmdbProvider.getTrending('tv', 'day', 1)
-        ]);
-
-        const movies: ContentItem[] =
-          trendingMovies.status === 'fulfilled' && Array.isArray(trendingMovies.value)
-            ? trendingMovies.value
-            : [];
-        const tvSeries: ContentItem[] =
-          trendingTv.status === 'fulfilled' && Array.isArray(trendingTv.value)
-            ? trendingTv.value
-            : [];
-
-        // Interleave Movie and TV series results
-        const maxLen = Math.max(movies.length, tvSeries.length);
-        for (let i = 0; i < maxLen; i++) {
-          if (i < movies.length) addItem(movies[i]);
-          if (i < tvSeries.length) addItem(tvSeries[i]);
-          if (items.length >= limit) break;
-        }
-
-        // If we got enough items directly from TMDB, return them
-        if (items.length >= Math.min(limit, 6)) {
-          return items.slice(0, limit);
-        }
-      } catch (err) {
-        console.warn('Live TMDB trending query failed, trying fallback sources:', err);
-      }
+  async getTrendingMoviesAndTv(limit = 12): Promise<ContentItem[]> {
+    if (!tmdbProvider.isAvailable()) {
+      return [];
     }
 
-    // 2. Fallback: Supabase or Curated Master Movie & TV catalog (NO anime/manga)
-    const masterDataset = getUnifiedMasterContent();
-    const movieAndTvDataset = masterDataset.filter((item) => {
-      const isLiveActionMovieOrTv =
-        item.content_type === 'movie' ||
-        item.content_type === 'tv_series' ||
-        item.content_type === 'web_series' ||
-        item.content_type === 'drama';
-      if (!isLiveActionMovieOrTv) return false;
+    try {
+      const [trendingMovies, trendingTv] = await Promise.allSettled([
+        tmdbProvider.getTrendingMovies('day', 1),
+        tmdbProvider.getTrendingTv('day', 1)
+      ]);
 
-      const countries = (item.countries || []).map((c: any) =>
-        typeof c === 'string' ? c : c?.code || c?.iso_3166_1 || c?.name || ''
-      );
-      const genres = (item.genres || []).map((g: any) =>
-        typeof g === 'string' ? g.toLowerCase() : g?.name?.toLowerCase() || ''
-      );
-      const isJapaneseAnimation =
-        (item.primary_language === 'ja' || countries.includes('JP') || countries.includes('Japan')) &&
-        genres.some((g) => g.includes('anim'));
+      const movies: ContentItem[] =
+        trendingMovies.status === 'fulfilled' && Array.isArray(trendingMovies.value)
+          ? trendingMovies.value
+          : [];
+      const tvSeries: ContentItem[] =
+        trendingTv.status === 'fulfilled' && Array.isArray(trendingTv.value)
+          ? trendingTv.value
+          : [];
 
-      return !isJapaneseAnimation;
-    });
+      const items: ContentItem[] = [];
+      const seenIds = new Set<string>();
+      const seenTitles = new Set<string>();
 
-    const sortedFallback = [...movieAndTvDataset].sort((a, b) => {
-      const popA = a.popularity || 0;
-      const popB = b.popularity || 0;
-      if (popB !== popA) return popB - popA;
-      return (
-        (b.score || (b.rating_average ? b.rating_average * 10 : 0)) -
-        (a.score || (a.rating_average ? a.rating_average * 10 : 0))
-      );
-    });
+      const addItem = (item: ContentItem) => {
+        if (!item || !item.id || items.length >= limit) return;
+        // Strictly enforce Movies, TV Series, Web Series, and live-action Dramas only
+        if (
+          item.content_type !== 'movie' &&
+          item.content_type !== 'tv_series' &&
+          item.content_type !== 'web_series' &&
+          item.content_type !== 'drama'
+        ) {
+          return;
+        }
+        // Strictly exclude Japanese animation/anime
+        const genres = (item.genres || []).map((g) =>
+          typeof g === 'string' ? g.toLowerCase() : g.name?.toLowerCase() || ''
+        );
+        const countries = (item.countries || []).map((c: any) =>
+          typeof c === 'string' ? c : c?.code || c?.iso_3166_1 || c?.name || ''
+        );
+        if (
+          (item.primary_language === 'ja' || countries.includes('JP') || countries.includes('Japan')) &&
+          genres.some((g) => g.includes('anim'))
+        ) {
+          return;
+        }
 
-    for (const item of sortedFallback) {
-      if (items.length >= limit) break;
-      addItem(item);
+        const idKey = String(item.id).toLowerCase();
+        if (seenIds.has(idKey)) return;
+
+        const titleKey = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (titleKey && seenTitles.has(titleKey)) return;
+
+        // Ensure artwork is securely resolved with real image or neutral placeholder
+        const resolvedPoster = resolveContentArtwork(item);
+        item.poster_url = resolvedPoster;
+        item.cover_url = resolvedPoster;
+
+        seenIds.add(idKey);
+        if (titleKey) seenTitles.add(titleKey);
+        items.push(item);
+      };
+
+      // Combine and sort by popularity / trending rank
+      const combined = [...movies, ...tvSeries].sort((a, b) => (b.popularity || 0) - (a.popularity || 0));
+
+      for (const item of combined) {
+        if (items.length >= limit) break;
+        addItem(item);
+      }
+
+      return items;
+    } catch (err) {
+      console.warn('Live TMDB trending query failed:', err);
+      return [];
+    }
+  }
+
+  /**
+   * Dedicated New Releases Movies & TV Series Service (Home Page New Releases)
+   * Fetches genuine recently released / currently playing movies (/3/movie/now_playing)
+   * and currently airing TV series (/3/tv/on_the_air) directly from TMDB.
+   * Filters to released dates (release_date <= today) and sorts newest first.
+   * Returns empty array if TMDB is unavailable or fails (no static catalog fallback).
+   */
+  async getNewReleasesMoviesAndTv(limit = 12): Promise<ContentItem[]> {
+    if (!tmdbProvider.isAvailable()) {
+      return [];
     }
 
-    return items.slice(0, limit);
+    try {
+      const today = new Date();
+      const todayString = today.toISOString().split('T')[0];
+
+      const [nowPlayingMovies, onTheAirTv] = await Promise.allSettled([
+        tmdbProvider.getNowPlayingMovies(1),
+        tmdbProvider.getOnTheAirTv(1)
+      ]);
+
+      const movies: ContentItem[] =
+        nowPlayingMovies.status === 'fulfilled' && Array.isArray(nowPlayingMovies.value)
+          ? nowPlayingMovies.value
+          : [];
+      const tvSeries: ContentItem[] =
+        onTheAirTv.status === 'fulfilled' && Array.isArray(onTheAirTv.value)
+          ? onTheAirTv.value
+          : [];
+
+      const items: ContentItem[] = [];
+      const seenIds = new Set<string>();
+      const seenTitles = new Set<string>();
+
+      const addItem = (item: ContentItem) => {
+        if (!item || !item.id || items.length >= limit) return;
+        // Strictly enforce Movies, TV Series, Web Series, and live-action Dramas only
+        if (
+          item.content_type !== 'movie' &&
+          item.content_type !== 'tv_series' &&
+          item.content_type !== 'web_series' &&
+          item.content_type !== 'drama'
+        ) {
+          return;
+        }
+
+        // Validate that the release date is valid and already released or releasing today
+        if (item.release_date && item.release_date > todayString) {
+          return;
+        }
+
+        // Exclude Japanese animation/anime
+        const genres = (item.genres || []).map((g) =>
+          typeof g === 'string' ? g.toLowerCase() : g.name?.toLowerCase() || ''
+        );
+        const countries = (item.countries || []).map((c: any) =>
+          typeof c === 'string' ? c : c?.code || c?.iso_3166_1 || c?.name || ''
+        );
+        if (
+          (item.primary_language === 'ja' || countries.includes('JP') || countries.includes('Japan')) &&
+          genres.some((g) => g.includes('anim'))
+        ) {
+          return;
+        }
+
+        const idKey = String(item.id).toLowerCase();
+        if (seenIds.has(idKey)) return;
+
+        const titleKey = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (titleKey && seenTitles.has(titleKey)) return;
+
+        const resolvedPoster = resolveContentArtwork(item);
+        item.poster_url = resolvedPoster;
+        item.cover_url = resolvedPoster;
+
+        seenIds.add(idKey);
+        if (titleKey) seenTitles.add(titleKey);
+        items.push(item);
+      };
+
+      // Sort combined pool strictly by release date descending (newest released first)
+      const combined = [...movies, ...tvSeries].sort((a, b) => {
+        const dateA = a.release_date ? new Date(a.release_date).getTime() : 0;
+        const dateB = b.release_date ? new Date(b.release_date).getTime() : 0;
+        if (dateB !== dateA) return dateB - dateA;
+        return (b.popularity || 0) - (a.popularity || 0);
+      });
+
+      for (const item of combined) {
+        if (items.length >= limit) break;
+        addItem(item);
+      }
+
+      return items;
+    } catch (err) {
+      console.warn('Live TMDB new releases query failed:', err);
+      return [];
+    }
   }
 
   /**

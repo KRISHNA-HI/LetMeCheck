@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import {
   TrendingUp,
   Clock,
@@ -6,7 +6,11 @@ import {
   Bookmark,
   Heart,
   ArrowRight,
-  Play
+  Play,
+  Film,
+  Calendar,
+  RefreshCw,
+  AlertCircle
 } from 'lucide-react';
 import { Manga } from '../types';
 import { mangaApi } from '../services/mangaApi';
@@ -37,9 +41,20 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
     loading: libraryLoading
   } = useLibrary();
 
-  // AniList dynamic discovery lists
+  // Featured Carousel State (Naruto + Curated/Live Recent Multi-Regional Movies)
   const [defaultNaruto, setDefaultNaruto] = useState<Manga>(SAMPLE_NARUTO);
+  const [multiRegionalMovies, setMultiRegionalMovies] = useState<Manga[]>([]);
+
+  // TMDB-Only Live Sections
   const [trending, setTrending] = useState<Manga[]>([]);
+  const [loadingTrending, setLoadingTrending] = useState<boolean>(true);
+  const [trendingFailed, setTrendingFailed] = useState<boolean>(false);
+
+  const [newReleases, setNewReleases] = useState<Manga[]>([]);
+  const [loadingNewReleases, setLoadingNewReleases] = useState<boolean>(true);
+  const [newReleasesFailed, setNewReleasesFailed] = useState<boolean>(false);
+
+  // General Entertainment & Anime/Manga Lists
   const [popular, setPopular] = useState<Manga[]>([]);
   const [recentlyUpdated, setRecentlyUpdated] = useState<Manga[]>([]);
   const [loadingDiscovery, setLoadingDiscovery] = useState<boolean>(true);
@@ -48,56 +63,81 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
   const [favoriteMangaList, setFavoriteMangaList] = useState<Manga[]>([]);
   const [loadingFavorites, setLoadingFavorites] = useState<boolean>(false);
 
-  // Multi-regional recent movies for the default carousel (genuinely recent released movies)
-  const [multiRegionalMovies, setMultiRegionalMovies] = useState<Manga[]>([]);
-
-  // 1. Fetch default Naruto data, discovery lists, and multi-regional recent movies
-  useEffect(() => {
-    let isMounted = true;
-
-    const fetchDiscoveryData = async () => {
-      setLoadingDiscovery(true);
-      try {
-        const [narutoData, trendingMoviesAndTv, popularContentItems, recentData, multiMovies] = await Promise.all([
-          mangaApi.getDefaultNarutoManga(),
-          contentService.getTrendingMoviesAndTv(10),
-          contentService.getPopularContent(10),
-          mangaApi.getRecentlyUpdated(1, 10),
-          contentService.getRecentMultiRegionalMovies()
-        ]);
-
-        if (isMounted) {
-          if (narutoData && hasUsableImage(narutoData)) setDefaultNaruto(narutoData);
-          setTrending(trendingMoviesAndTv.map(contentItemToManga).filter(hasUsableImage));
-          setPopular(popularContentItems.map(contentItemToManga).filter(hasUsableImage));
-          setRecentlyUpdated((recentData || []).filter(hasUsableImage));
-
-          if (multiMovies && multiMovies.length > 0) {
-            const converted = multiMovies.map(contentItemToManga).filter(hasUsableImage);
-            setMultiRegionalMovies(converted);
-          }
-        }
-      } catch (err) {
-        console.warn('Failed to load discovery data, fallback applied:', err);
-        if (isMounted) {
-          // Use movie/tv fallbacks for trending, not manga
-          const fallbackTrending = await contentService.getTrendingMoviesAndTv(10);
-          setTrending(fallbackTrending.map(contentItemToManga).filter(hasUsableImage));
-          setPopular(SAMPLE_MANGA.filter(hasUsableImage));
-          setRecentlyUpdated(SAMPLE_MANGA.filter(hasUsableImage));
-        }
-      } finally {
-        if (isMounted) setLoadingDiscovery(false);
+  // 1. Fetch TMDB Trending (Movies + TV series only)
+  const fetchTrendingData = useCallback(async () => {
+    setLoadingTrending(true);
+    setTrendingFailed(false);
+    try {
+      const trendingItems = await contentService.getTrendingMoviesAndTv(12);
+      const converted = trendingItems.map(contentItemToManga).filter(hasUsableImage);
+      setTrending(converted);
+      if (converted.length === 0) {
+        setTrendingFailed(true);
       }
-    };
-
-    fetchDiscoveryData();
-    return () => {
-      isMounted = false;
-    };
+    } catch (err) {
+      console.warn('Failed to load TMDB trending:', err);
+      setTrending([]);
+      setTrendingFailed(true);
+    } finally {
+      setLoadingTrending(false);
+    }
   }, []);
 
-  // 2. Resolve user's favorite manga objects (ordered by recency of addition)
+  // 2. Fetch TMDB New Releases (Movies + TV series only)
+  const fetchNewReleasesData = useCallback(async () => {
+    setLoadingNewReleases(true);
+    setNewReleasesFailed(false);
+    try {
+      const newReleaseItems = await contentService.getNewReleasesMoviesAndTv(12);
+      const converted = newReleaseItems.map(contentItemToManga).filter(hasUsableImage);
+      setNewReleases(converted);
+      if (converted.length === 0) {
+        setNewReleasesFailed(true);
+      }
+    } catch (err) {
+      console.warn('Failed to load TMDB new releases:', err);
+      setNewReleases([]);
+      setNewReleasesFailed(true);
+    } finally {
+      setLoadingNewReleases(false);
+    }
+  }, []);
+
+  // 3. Fetch Featured Carousel & Other Catalogs
+  const fetchFeaturedAndCatalogs = useCallback(async () => {
+    setLoadingDiscovery(true);
+    try {
+      const [narutoData, popularContentItems, recentData, multiMovies] = await Promise.all([
+        mangaApi.getDefaultNarutoManga(),
+        contentService.getPopularContent(10),
+        mangaApi.getRecentlyUpdated(1, 10),
+        contentService.getRecentMultiRegionalMovies()
+      ]);
+
+      if (narutoData && hasUsableImage(narutoData)) setDefaultNaruto(narutoData);
+      setPopular(popularContentItems.map(contentItemToManga).filter(hasUsableImage));
+      setRecentlyUpdated((recentData || []).filter(hasUsableImage));
+
+      if (multiMovies && multiMovies.length > 0) {
+        const converted = multiMovies.map(contentItemToManga).filter(hasUsableImage);
+        setMultiRegionalMovies(converted);
+      }
+    } catch (err) {
+      console.warn('Failed to load featured/catalog data:', err);
+      setPopular(SAMPLE_MANGA.filter(hasUsableImage));
+      setRecentlyUpdated(SAMPLE_MANGA.filter(hasUsableImage));
+    } finally {
+      setLoadingDiscovery(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchTrendingData();
+    fetchNewReleasesData();
+    fetchFeaturedAndCatalogs();
+  }, [fetchTrendingData, fetchNewReleasesData, fetchFeaturedAndCatalogs]);
+
+  // 4. Resolve user's favorite manga objects (ordered by recency of addition)
   useEffect(() => {
     let isMounted = true;
 
@@ -479,35 +519,96 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
         </section>
       )}
 
-      {/* 6. Trending Section */}
+      {/* 6. Trending Now (Movies & TV Series from TMDB) */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <TrendingUp className="w-4 h-4 text-sky-400" />
-            <h2 className="text-base font-bold text-zinc-100 tracking-tight">Trending Now</h2>
+            <h2 className="text-base font-bold text-zinc-100 tracking-tight">Trending Now (Movies & TV)</h2>
           </div>
           <button
             onClick={() => navigate('discover')}
             className="text-xs text-sky-400 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
           >
-            View All <ArrowRight className="w-3.5 h-3.5" />
+            Explore Movies & TV <ArrowRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <MangaGrid
-          items={trending}
-          loading={loadingDiscovery}
-          skeletonCount={6}
-          onSelectManga={onSelectManga}
-        />
+        {trendingFailed && !loadingTrending ? (
+          <div className="flex flex-col items-center justify-center p-8 text-center bg-zinc-900/40 rounded-2xl border border-zinc-800 my-2">
+            <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-sky-400 mb-2">
+              <Film className="w-5 h-5" />
+            </div>
+            <h4 className="text-sm font-bold text-zinc-200 mb-1">Live TMDB Trending Unavailable</h4>
+            <p className="text-xs text-zinc-400 max-w-md mb-3">
+              Unable to fetch current trending Movies & TV series from TMDB. Please check your internet connection or TMDB API configuration.
+            </p>
+            <button
+              onClick={fetchTrendingData}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Retry TMDB Trending
+            </button>
+          </div>
+        ) : (
+          <MangaGrid
+            items={trending}
+            loading={loadingTrending}
+            skeletonCount={6}
+            onSelectManga={onSelectManga}
+            emptyMessage="No live trending movies or TV series available from TMDB at this time."
+          />
+        )}
       </section>
 
-      {/* 7. Popular Section */}
+      {/* 7. New Releases (Movies & TV Series from TMDB) */}
+      <section className="flex flex-col gap-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar className="w-4 h-4 text-emerald-400" />
+            <h2 className="text-base font-bold text-zinc-100 tracking-tight">New Releases (Movies & TV)</h2>
+          </div>
+          <button
+            onClick={() => navigate('discover')}
+            className="text-xs text-emerald-400 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+          >
+            View All Releases <ArrowRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {newReleasesFailed && !loadingNewReleases ? (
+          <div className="flex flex-col items-center justify-center p-8 text-center bg-zinc-900/40 rounded-2xl border border-zinc-800 my-2">
+            <div className="w-10 h-10 rounded-full bg-zinc-800 flex items-center justify-center text-emerald-400 mb-2">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <h4 className="text-sm font-bold text-zinc-200 mb-1">Live TMDB New Releases Unavailable</h4>
+            <p className="text-xs text-zinc-400 max-w-md mb-3">
+              Unable to fetch new releases from TMDB. Please check your internet connection or TMDB API configuration.
+            </p>
+            <button
+              onClick={fetchNewReleasesData}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs font-semibold text-zinc-200 transition-colors cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Retry New Releases
+            </button>
+          </div>
+        ) : (
+          <MangaGrid
+            items={newReleases}
+            loading={loadingNewReleases}
+            skeletonCount={6}
+            onSelectManga={onSelectManga}
+            emptyMessage="No recent releases found from TMDB."
+          />
+        )}
+      </section>
+
+      {/* 8. Popular Anime & Manga */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Sparkles className="w-4 h-4 text-indigo-400" />
-            <h2 className="text-base font-bold text-zinc-100 tracking-tight">All-Time Popular</h2>
+            <h2 className="text-base font-bold text-zinc-100 tracking-tight">Popular Anime & Manga</h2>
           </div>
           <button
             onClick={() => navigate('discover')}
@@ -525,12 +626,12 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
         />
       </section>
 
-      {/* 8. Recently Updated Section */}
+      {/* 9. Recently Updated Anime & Manga */}
       <section className="flex flex-col gap-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 text-amber-400" />
-            <h2 className="text-base font-bold text-zinc-100 tracking-tight">Recently Updated</h2>
+            <h2 className="text-base font-bold text-zinc-100 tracking-tight">Recently Updated (Anime & Manga)</h2>
           </div>
           <button
             onClick={() => navigate('discover')}

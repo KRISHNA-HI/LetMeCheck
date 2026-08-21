@@ -227,9 +227,53 @@ export class TmdbProvider implements ContentProvider {
   }
 
   /**
+   * Fetch Trending movies specifically for day or week window (/trending/movie/{time_window})
+   */
+  async getTrendingMovies(timeWindow: 'day' | 'week' = 'day', page = 1): Promise<ContentItem[]> {
+    if (!this.isAvailable()) return [];
+    const data = await this.fetchWithRetry<any>(`/trending/movie/${timeWindow}`, { page: page.toString() });
+    if (!data || !Array.isArray(data.results)) return [];
+    return data.results
+      .filter((raw: any) => raw.media_type !== 'person')
+      .map((raw: any) => normalizeTmdbItem(raw, 'movie', this.imageBaseUrl));
+  }
+
+  /**
+   * Fetch Trending TV series specifically for day or week window (/trending/tv/{time_window})
+   */
+  async getTrendingTv(timeWindow: 'day' | 'week' = 'day', page = 1): Promise<ContentItem[]> {
+    if (!this.isAvailable()) return [];
+    const data = await this.fetchWithRetry<any>(`/trending/tv/${timeWindow}`, { page: page.toString() });
+    if (!data || !Array.isArray(data.results)) return [];
+    return data.results
+      .filter((raw: any) => raw.media_type !== 'person')
+      .map((raw: any) => normalizeTmdbItem(raw, 'tv', this.imageBaseUrl));
+  }
+
+  /**
+   * Fetch currently playing/recently released movies in theatres (/movie/now_playing)
+   */
+  async getNowPlayingMovies(page = 1): Promise<ContentItem[]> {
+    if (!this.isAvailable()) return [];
+    const data = await this.fetchWithRetry<any>('/movie/now_playing', { page: page.toString() });
+    if (!data || !Array.isArray(data.results)) return [];
+    return data.results.map((raw: any) => normalizeTmdbItem(raw, 'movie', this.imageBaseUrl));
+  }
+
+  /**
+   * Fetch currently on the air / recently aired TV series (/tv/on_the_air)
+   */
+  async getOnTheAirTv(page = 1): Promise<ContentItem[]> {
+    if (!this.isAvailable()) return [];
+    const data = await this.fetchWithRetry<any>('/tv/on_the_air', { page: page.toString() });
+    if (!data || !Array.isArray(data.results)) return [];
+    return data.results.map((raw: any) => normalizeTmdbItem(raw, 'tv', this.imageBaseUrl));
+  }
+
+  /**
    * Fetch Trending items across media (all, movies, TV) for day or week window
    */
-  async getTrending(mediaType: 'all' | 'movie' | 'tv' = 'all', timeWindow: 'day' | 'week' = 'week', page = 1): Promise<ContentItem[]> {
+  async getTrending(mediaType: 'all' | 'movie' | 'tv' = 'all', timeWindow: 'day' | 'week' = 'day', page = 1): Promise<ContentItem[]> {
     if (!this.isAvailable()) return [];
 
     const endpoint = `/trending/${mediaType}/${timeWindow}`;
