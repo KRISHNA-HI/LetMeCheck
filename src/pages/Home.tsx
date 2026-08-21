@@ -58,9 +58,9 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
     const fetchDiscoveryData = async () => {
       setLoadingDiscovery(true);
       try {
-        const [narutoData, trendingContentItems, popularContentItems, recentData, multiMovies] = await Promise.all([
+        const [narutoData, trendingMoviesAndTv, popularContentItems, recentData, multiMovies] = await Promise.all([
           mangaApi.getDefaultNarutoManga(),
-          contentService.getTrendingContent(10),
+          contentService.getTrendingMoviesAndTv(10),
           contentService.getPopularContent(10),
           mangaApi.getRecentlyUpdated(1, 10),
           contentService.getRecentMultiRegionalMovies()
@@ -68,7 +68,7 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
 
         if (isMounted) {
           if (narutoData && hasUsableImage(narutoData)) setDefaultNaruto(narutoData);
-          setTrending(trendingContentItems.map(contentItemToManga).filter(hasUsableImage));
+          setTrending(trendingMoviesAndTv.map(contentItemToManga).filter(hasUsableImage));
           setPopular(popularContentItems.map(contentItemToManga).filter(hasUsableImage));
           setRecentlyUpdated((recentData || []).filter(hasUsableImage));
 
@@ -80,7 +80,9 @@ export const Home: React.FC<HomeProps> = ({ navigate, onSelectManga }) => {
       } catch (err) {
         console.warn('Failed to load discovery data, fallback applied:', err);
         if (isMounted) {
-          setTrending(SAMPLE_MANGA.filter(hasUsableImage));
+          // Use movie/tv fallbacks for trending, not manga
+          const fallbackTrending = await contentService.getTrendingMoviesAndTv(10);
+          setTrending(fallbackTrending.map(contentItemToManga).filter(hasUsableImage));
           setPopular(SAMPLE_MANGA.filter(hasUsableImage));
           setRecentlyUpdated(SAMPLE_MANGA.filter(hasUsableImage));
         }

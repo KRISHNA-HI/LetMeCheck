@@ -154,7 +154,7 @@ export function contentItemToManga(item: ContentItem): Manga {
       : [],
     chapters: item.chapters || item.episodes_count || null,
     volumes: item.volumes || item.seasons_count || null,
-    cover_url: item.poster_url || item.cover_url || '/placeholder-cover.svg',
+    cover_url: resolveContentArtwork(item),
     banner_url: item.backdrop_url || item.banner_url || null,
     score: item.score || (item.rating_average ? Math.round(item.rating_average * 10) : 0),
     popularity: item.popularity || 0,
@@ -1192,6 +1192,133 @@ class ContentService {
     }
 
     return items.slice(0, 5);
+  }
+
+  /**
+   * Dedicated Trending Movies & TV Series Service (Home Page Trending)
+   * Fetches genuine trending data directly from TMDB for Movies and TV/Web Series.
+   * Excludes Manga, Manhwa, Manhua, Anime, and AniList content.
+   * Preserves both Movie and TV types with authentic poster paths.
+   */
+  async getTrendingMoviesAndTv(limit = 10): Promise<ContentItem[]> {
+    const items: ContentItem[] = [];
+    const seenIds = new Set<string>();
+    const seenTitles = new Set<string>();
+
+    const addItem = (item: ContentItem) => {
+      if (!item || !item.id || items.length >= limit) return;
+      // Strictly enforce Movies, TV Series, Web Series, and live-action Dramas only
+      if (
+        item.content_type !== 'movie' &&
+        item.content_type !== 'tv_series' &&
+        item.content_type !== 'web_series' &&
+        item.content_type !== 'drama'
+      ) {
+        return;
+      }
+      // Strictly exclude any animation/anime from Japan
+      const genres = (item.genres || []).map((g) =>
+        typeof g === 'string' ? g.toLowerCase() : g.name?.toLowerCase() || ''
+      );
+      const countries = (item.countries || []).map((c: any) =>
+        typeof c === 'string' ? c : c?.code || c?.iso_3166_1 || c?.name || ''
+      );
+      if (
+        (item.primary_language === 'ja' || countries.includes('JP') || countries.includes('Japan')) &&
+        genres.some((g) => g.includes('anim'))
+      ) {
+        return;
+      }
+
+      const idKey = String(item.id).toLowerCase();
+      if (seenIds.has(idKey)) return;
+
+      const titleKey = (item.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      if (titleKey && seenTitles.has(titleKey)) return;
+
+      // Ensure artwork is securely resolved with real image or neutral placeholder
+      const resolvedPoster = resolveContentArtwork(item);
+      item.poster_url = resolvedPoster;
+      item.cover_url = resolvedPoster;
+
+      seenIds.add(idKey);
+      if (titleKey) seenTitles.add(titleKey);
+      items.push(item);
+    };
+
+    // 1. Direct TMDB Trending API fetch (Movies + TV series)
+    if (tmdbProvider.isAvailable()) {
+      try {
+        const [trendingMovies, trendingTv] = await Promise.allSettled([
+          tmdbProvider.getTrending('movie', 'day', 1),
+          tmdbProvider.getTrending('tv', 'day', 1)
+        ]);
+
+        const movies: ContentItem[] =
+          trendingMovies.status === 'fulfilled' && Array.isArray(trendingMovies.value)
+            ? trendingMovies.value
+            : [];
+        const tvSeries: ContentItem[] =
+          trendingTv.status === 'fulfilled' && Array.isArray(trendingTv.value)
+            ? trendingTv.value
+            : [];
+
+        // Interleave Movie and TV series results
+        const maxLen = Math.max(movies.length, tvSeries.length);
+        for (let i = 0; i < maxLen; i++) {
+          if (i < movies.length) addItem(movies[i]);
+          if (i < tvSeries.length) addItem(tvSeries[i]);
+          if (items.length >= limit) break;
+        }
+
+        // If we got enough items directly from TMDB, return them
+        if (items.length >= Math.min(limit, 6)) {
+          return items.slice(0, limit);
+        }
+      } catch (err) {
+        console.warn('Live TMDB trending query failed, trying fallback sources:', err);
+      }
+    }
+
+    // 2. Fallback: Supabase or Curated Master Movie & TV catalog (NO anime/manga)
+    const masterDataset = getUnifiedMasterContent();
+    const movieAndTvDataset = masterDataset.filter((item) => {
+      const isLiveActionMovieOrTv =
+        item.content_type === 'movie' ||
+        item.content_type === 'tv_series' ||
+        item.content_type === 'web_series' ||
+        item.content_type === 'drama';
+      if (!isLiveActionMovieOrTv) return false;
+
+      const countries = (item.countries || []).map((c: any) =>
+        typeof c === 'string' ? c : c?.code || c?.iso_3166_1 || c?.name || ''
+      );
+      const genres = (item.genres || []).map((g: any) =>
+        typeof g === 'string' ? g.toLowerCase() : g?.name?.toLowerCase() || ''
+      );
+      const isJapaneseAnimation =
+        (item.primary_language === 'ja' || countries.includes('JP') || countries.includes('Japan')) &&
+        genres.some((g) => g.includes('anim'));
+
+      return !isJapaneseAnimation;
+    });
+
+    const sortedFallback = [...movieAndTvDataset].sort((a, b) => {
+      const popA = a.popularity || 0;
+      const popB = b.popularity || 0;
+      if (popB !== popA) return popB - popA;
+      return (
+        (b.score || (b.rating_average ? b.rating_average * 10 : 0)) -
+        (a.score || (a.rating_average ? a.rating_average * 10 : 0))
+      );
+    });
+
+    for (const item of sortedFallback) {
+      if (items.length >= limit) break;
+      addItem(item);
+    }
+
+    return items.slice(0, limit);
   }
 
   /**
