@@ -27,6 +27,7 @@ import { contentService } from '../services/contentService';
 import { supabase } from '../services/supabase';
 import { useAuth } from '../hooks/useAuth';
 import { isUserAdmin } from '../utils/adminAuth';
+import { runCatalogSemanticAudit, reconcileCatalogIntegrity } from '../services/adminAudit';
 
 interface AdminIngestionProps {
   navigate: (route: string) => void;
@@ -139,6 +140,21 @@ export const AdminIngestion: React.FC<AdminIngestionProps> = ({ navigate }) => {
     try {
       setAuditLoading(true);
       setAuditFeedback(null);
+
+      // 1. Direct Supabase Client Semantic Audit
+      try {
+        const audit = await runCatalogSemanticAudit(supabase);
+        if (audit) {
+          setAuditFeedback(`Audit complete: ${audit.semanticQuality.semanticQualityScore}% semantic quality score. ${audit.semanticQuality.semanticDiscrepanciesCount} anomalies found.`);
+          await loadData();
+          setAuditLoading(false);
+          return;
+        }
+      } catch (directErr) {
+        console.warn('Direct Supabase audit error, trying API endpoint fallback:', directErr);
+      }
+
+      // 2. Fallback to API route
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       const res = await fetch('/api/admin/semantic-audit', {
         headers: {
@@ -163,6 +179,21 @@ export const AdminIngestion: React.FC<AdminIngestionProps> = ({ navigate }) => {
     try {
       setReconcileLoading(true);
       setAuditFeedback(null);
+
+      // 1. Direct Supabase Client Reconciliation
+      try {
+        const res = await reconcileCatalogIntegrity(supabase);
+        if (res && res.success) {
+          setAuditFeedback(res.message);
+          await loadData();
+          setReconcileLoading(false);
+          return;
+        }
+      } catch (directErr) {
+        console.warn('Direct Supabase reconcile error, trying API endpoint fallback:', directErr);
+      }
+
+      // 2. Fallback to API route
       const token = (await supabase.auth.getSession()).data.session?.access_token;
       const res = await fetch('/api/admin/reconcile-integrity', {
         method: 'POST',

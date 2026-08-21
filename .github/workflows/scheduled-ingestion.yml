@@ -1,0 +1,74 @@
+name: Scheduled TMDB Ingestion
+
+on:
+  schedule:
+    # Runs nightly at 02:00 AM IST (20:30 UTC: '30 20 * * *')
+    - cron: '30 20 * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: 'Batch limit of titles to process (default: 100)'
+        required: false
+        default: '100'
+      category:
+        description: 'Specific category to ingest (optional, e.g. korean_cinema, mollywood, anime_industry)'
+        required: false
+        default: 'all'
+      media_type:
+        description: 'Media type (all, movie, tv)'
+        required: false
+        default: 'all'
+
+jobs:
+  trigger-ingestion:
+    name: Trigger Supabase Ingestion Edge Function
+    runs-on: ubuntu-latest
+    steps:
+      - name: Trigger Edge Function
+        env:
+          SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || secrets.SUPABASE_URL }}
+          SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          INGESTION_SECRET: ${{ secrets.INGESTION_SECRET }}
+          BATCH_LIMIT: ${{ github.event.inputs.limit || '100' }}
+          CATEGORY: ${{ github.event.inputs.category || 'all' }}
+          MEDIA_TYPE: ${{ github.event.inputs.media_type || 'all' }}
+        run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SERVICE_ROLE_KEY" ]; then
+            echo "::error::Missing required SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY secret in repository settings."
+            exit 1
+          fi
+
+          # Clean URL trailing slash
+          CLEAN_URL="${SUPABASE_URL%/}"
+          ENDPOINT="${CLEAN_URL}/functions/v1/ingest-tmdb-content"
+
+          echo "Triggering Supabase Edge Function: $ENDPOINT"
+          
+          PAYLOAD=$(cat <<EOF
+          {
+            "runType": "scheduled",
+            "batchLimit": ${BATCH_LIMIT},
+            "regionFilter": "${CATEGORY}",
+            "mediaType": "${MEDIA_TYPE}"
+          }
+          EOF
+          )
+
+          HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$ENDPOINT" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${SERVICE_ROLE_KEY}" \
+            -H "x-ingestion-secret: ${INGESTION_SECRET}" \
+            -d "$PAYLOAD")
+
+          HTTP_BODY=$(echo "$HTTP_RESPONSE" | sed '$d')
+          HTTP_STATUS=$(echo "$HTTP_RESPONSE" | tail -n1)
+
+          echo "Response Status: $HTTP_STATUS"
+          echo "Response Body: $HTTP_BODY"
+
+          if [ "$HTTP_STATUS" -ge 200 ] && [ "$HTTP_STATUS" -lt 300 ]; then
+            echo "Ingestion job successfully triggered and completed."
+          else
+            echo "::error::Ingestion Edge Function returned HTTP error $HTTP_STATUS"
+            exit 1
+          fi

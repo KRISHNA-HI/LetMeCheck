@@ -36,7 +36,9 @@ import { ImageWithFallback } from './components/common/ImageWithFallback';
 function getRouteFromHash(): { route: string; query: string } {
   if (typeof window === 'undefined') return { route: 'home', query: '' };
   const rawHash = window.location.hash.replace(/^#\/?/, '').trim();
-  if (!rawHash) return { route: 'home', query: '' };
+  const rawPath = window.location.pathname.replace(/^\//, '').trim();
+  const rawRoute = rawHash || (rawPath && rawPath !== 'index.html' ? rawPath : '');
+  if (!rawRoute) return { route: 'home', query: '' };
 
   // If hash contains Supabase auth tokens, email confirmation fragments, or errors
   if (
@@ -49,12 +51,12 @@ function getRouteFromHash(): { route: string; query: string } {
     return { route: 'home', query: '' };
   }
 
-  if (rawHash.startsWith('search?q=')) {
-    const q = decodeURIComponent(rawHash.replace('search?q=', ''));
+  if (rawRoute.startsWith('search?q=')) {
+    const q = decodeURIComponent(rawRoute.replace('search?q=', ''));
     return { route: 'search', query: q };
   }
 
-  return { route: rawHash, query: '' };
+  return { route: rawRoute, query: '' };
 }
 
 export default function App() {
@@ -149,9 +151,13 @@ export default function App() {
     }
   };
 
-  // Extract manga ID if on manga details route
-  const isDetailsRoute = currentRoute.startsWith('manga/');
-  const detailsId = isDetailsRoute ? currentRoute.replace('manga/', '') : null;
+  // Extract content ID if on details / universe route
+  const isDetailsRoute = currentRoute.startsWith('manga/') ||
+                         currentRoute.startsWith('movie/') ||
+                         currentRoute.startsWith('series/') ||
+                         currentRoute.startsWith('universe/') ||
+                         currentRoute.startsWith('content/');
+  const detailsId = isDetailsRoute ? currentRoute.replace(/^(manga|movie|series|universe|content)\//, '') : null;
 
   const readingList = library.filter((item) => item.status === 'Reading' && item.manga);
 

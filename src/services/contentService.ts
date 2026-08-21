@@ -26,6 +26,7 @@ import { anilistProvider } from './providers/anilist';
 import { hasUsableImage } from '../utils/formatters';
 import { getUnifiedMasterContent } from '../data/unifiedContentData';
 import { resolveContentArtwork } from './contentImageResolver';
+import { runCatalogSemanticAudit } from './adminAudit';
 
 // Master in-memory dictionary defaults for instant fallback / offline access
 export const DEFAULT_INDUSTRIES: IndustryModel[] = [
@@ -584,18 +585,7 @@ class ContentService {
    * Admin & Health: Get Regional Catalog Distribution
    */
   async getRegionalCatalogCounts(): Promise<Array<{ code: string; name: string; count: number; movieCount: number; tvCount: number }>> {
-    // 1. Try fetching from live regional counts API
-    try {
-      const res = await fetch('/api/admin/regional-counts');
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          return json.data;
-        }
-      }
-    } catch (_) {}
-
-    // 2. Direct Supabase query if available
+    // 1. Direct Supabase query via RPC or PostgREST if available
     if (isSupabaseConfigured() && supabase) {
       try {
         const { data, error } = await supabase.rpc('get_regional_catalog_counts');
@@ -613,7 +603,18 @@ class ContentService {
       }
     }
 
-    // 3. If database is unavailable, return empty list (no static fallback contamination)
+    // 2. Try fetching from live regional counts API endpoint (Express fallback if active)
+    try {
+      const res = await fetch('/api/admin/regional-counts');
+      if (res.ok) {
+        const json = await res.json();
+        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
+          return json.data;
+        }
+      }
+    } catch (_) {}
+
+    // 3. If database is unavailable, return empty list
     return [];
   }
 
@@ -635,7 +636,84 @@ class ContentService {
     recentRuns: any[];
     progress: any[];
     source?: string;
+    integrity?: any;
+    relationalIntegrity?: any;
+    semanticQuality?: any;
   }> {
+    // 1. Direct Supabase Query (Serverless native)
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const [runsRes, progRes, auditResult, ciRes, indListRes] = await Promise.all([
+          supabase.from('ingestion_runs').select('*').order('started_at', { ascending: false }).limit(10),
+          supabase.from('ingestion_progress').select('*').order('updated_at', { ascending: false }),
+          runCatalogSemanticAudit(supabase),
+          supabase.from('content_industries').select('content_id, industry_id'),
+          supabase.from('industries').select('id, name')
+        ]);
+
+        if (!runsRes.error || !progRes.error) {
+          const recentRuns = runsRes.data || [];
+          const progress = progRes.data || [];
+          const lastRun = recentRuns.length > 0 ? recentRuns[0] : null;
+          const lastSuccessfulRun = recentRuns.find((r: any) => r.status === 'SUCCESS') || null;
+
+          const indList = indListRes.data || [];
+          const ciList = ciRes.data || [];
+          const indIdToName = new Map<number | string, string>();
+          indList.forEach((i: any) => indIdToName.set(i.id, i.name));
+
+          let totalPagesProcessed = 0;
+          let totalPagesAvailable = 0;
+          for (const p of progress) {
+            totalPagesProcessed += (p.last_successful_page || 0);
+            totalPagesAvailable += (p.total_pages_available || 1);
+          }
+
+          const totalInsertedAll = recentRuns.reduce((acc: number, r: any) => acc + (r.titles_inserted || 0), 0);
+          const totalFailedAll = recentRuns.reduce((acc: number, r: any) => acc + (r.failed_records || 0), 0);
+
+          return {
+            configured: true,
+            totalCatalogCount: auditResult?.totalContent || 0,
+            countByContentType: {
+              movies: auditResult?.moviesCount || 0,
+              tvSeries: auditResult?.tvCount || 0
+            },
+            integrity: auditResult ? {
+              totalContent: auditResult.totalContent,
+              moviesCount: auditResult.moviesCount,
+              tvCount: auditResult.tvCount,
+              contentWithIndustry: auditResult.relationalIntegrity.contentWithIndustry,
+              orphanedContent: auditResult.relationalIntegrity.orphanedContent,
+              contentWithLanguage: auditResult.relationalIntegrity.contentWithLanguage,
+              contentWithCountry: auditResult.relationalIntegrity.contentWithCountry,
+              contentWithGenres: auditResult.relationalIntegrity.contentWithGenres,
+              isHealthy: auditResult.semanticQuality.overallHealth
+            } : undefined,
+            relationalIntegrity: auditResult?.relationalIntegrity,
+            semanticQuality: auditResult?.semanticQuality,
+            currentDailyQuota: 1000,
+            pagesProcessed: totalPagesProcessed,
+            pagesRemaining: Math.max(0, totalPagesAvailable - totalPagesProcessed),
+            successfulItems: totalInsertedAll,
+            failedItems: totalFailedAll,
+            lastRun,
+            lastSuccessfulRun,
+            nextScheduledRun: '02:00 AM IST / 20:30 UTC (Nightly via GitHub Actions / pg_cron)',
+            recentRuns,
+            progress: progress.map((p: any) => ({
+              ...p,
+              pagesRemaining: Math.max(0, (p.total_pages_available || 1) - (p.last_successful_page || 0))
+            })),
+            source: 'Supabase-Native Database (Serverless Live Synchronization)'
+          };
+        }
+      } catch (directErr) {
+        console.warn('Direct Supabase status query error:', directErr);
+      }
+    }
+
+    // 2. Fallback to API route (during Express transition)
     try {
       let headers: Record<string, string> = {};
       if (supabase) {
@@ -665,7 +743,7 @@ class ContentService {
       failedItems: 0,
       lastRun: null,
       lastSuccessfulRun: null,
-      nextScheduledRun: '02:00 UTC (Nightly via pg_cron)',
+      nextScheduledRun: '02:00 UTC (Nightly via GitHub Actions / pg_cron)',
       recentRuns: [],
       progress: []
     };
@@ -679,6 +757,24 @@ class ContentService {
     category?: string;
     media_type?: 'movie' | 'tv';
   }): Promise<{ success: boolean; data?: any; error?: string }> {
+    // 1. Try Supabase Edge Function 'ingest-tmdb-content'
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: funcData, error: funcErr } = await supabase.functions.invoke('ingest-tmdb-content', {
+          body: options || {}
+        });
+        if (!funcErr && funcData) {
+          return { success: true, data: funcData };
+        }
+        if (funcErr) {
+          console.warn('Supabase Edge Function invocation failed, trying Express fallback:', funcErr.message);
+        }
+      } catch (funcErr: any) {
+        console.warn('Edge function invoke exception:', funcErr);
+      }
+    }
+
+    // 2. Fallback to server route '/api/admin/ingest-tmdb' (during transition)
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
@@ -714,6 +810,21 @@ class ContentService {
    * Admin: Trigger Scheduled Nightly Ingestion Worker (Admin Only)
    */
   async triggerNightlyScheduler(): Promise<{ success: boolean; data?: any; error?: string }> {
+    // 1. Try Supabase Edge Function 'ingest-tmdb-content'
+    if (isSupabaseConfigured() && supabase) {
+      try {
+        const { data: funcData, error: funcErr } = await supabase.functions.invoke('ingest-tmdb-content', {
+          body: { runType: 'scheduled', batchLimit: 100 }
+        });
+        if (!funcErr && funcData) {
+          return { success: true, data: funcData };
+        }
+      } catch (funcErr: any) {
+        console.warn('Edge function invoke exception for nightly schedule:', funcErr);
+      }
+    }
+
+    // 2. Fallback to server route '/api/admin/trigger-nightly'
     try {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'

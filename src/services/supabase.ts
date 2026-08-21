@@ -325,8 +325,34 @@ export const supabaseService = {
       const { data: sessionData } = await supabase.auth.getSession();
       const accessToken = sessionData?.session?.access_token;
 
-      // Method A: Call server API route `/api/delete-account`
-      if (accessToken) {
+      // Method 1: Invoke Supabase Edge Function 'delete-user-account' (Serverless native)
+      try {
+        const { data: funcData, error: funcErr } = await supabase.functions.invoke('delete-user-account');
+        if (!funcErr && funcData && (funcData.success || funcData.message)) {
+          authDeleted = true;
+        } else if (funcErr) {
+          deletionErrorMessage = funcErr.message || deletionErrorMessage;
+        }
+      } catch (e: any) {
+        deletionErrorMessage = e?.message || deletionErrorMessage;
+      }
+
+      // Method 2: Invoke PostgreSQL RPC 'delete_user_account' (SECURITY DEFINER)
+      if (!authDeleted) {
+        try {
+          const { error: rpcErr } = await supabase.rpc('delete_user_account');
+          if (!rpcErr) {
+            authDeleted = true;
+          } else {
+            deletionErrorMessage = rpcErr.message || deletionErrorMessage;
+          }
+        } catch (e: any) {
+          deletionErrorMessage = e?.message || deletionErrorMessage;
+        }
+      }
+
+      // Method 3: Fallback to server API route `/api/delete-account` (during transition)
+      if (!authDeleted && accessToken) {
         try {
           const res = await fetch('/api/delete-account', {
             method: 'POST',
@@ -349,35 +375,7 @@ export const supabaseService = {
             }
           }
         } catch (apiErr: any) {
-          console.warn('API /api/delete-account call error:', apiErr);
-        }
-      }
-
-      // Method B: Invoke Supabase Edge Function 'delete-user-account'
-      if (!authDeleted) {
-        try {
-          const { data: funcData, error: funcErr } = await supabase.functions.invoke('delete-user-account');
-          if (!funcErr && funcData && (funcData.success || funcData.message)) {
-            authDeleted = true;
-          } else if (funcErr) {
-            deletionErrorMessage = funcErr.message || deletionErrorMessage;
-          }
-        } catch (e: any) {
-          deletionErrorMessage = e?.message || deletionErrorMessage;
-        }
-      }
-
-      // Method C: Invoke PostgreSQL RPC 'delete_user_account' (SECURITY DEFINER)
-      if (!authDeleted) {
-        try {
-          const { error: rpcErr } = await supabase.rpc('delete_user_account');
-          if (!rpcErr) {
-            authDeleted = true;
-          } else {
-            deletionErrorMessage = rpcErr.message || deletionErrorMessage;
-          }
-        } catch (e: any) {
-          deletionErrorMessage = e?.message || deletionErrorMessage;
+          console.warn('API /api/delete-account fallback error:', apiErr);
         }
       }
 
@@ -1060,6 +1058,13 @@ export const supabaseService = {
       }
 
       if (UUID_REGEX.test(dbMangaId)) {
+        const { data: existing, error: selectError } = await supabase
+          .from('favorites')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('manga_id', dbMangaId)
+          .maybeSingle();
+
         if (willBeFav) {
           await supabase.from('favorites').upsert(
             {
