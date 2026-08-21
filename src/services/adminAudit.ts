@@ -299,33 +299,30 @@ export async function reconcileCatalogIntegrity(client = supabase): Promise<{
   auditAfter?: any;
 }> {
   try {
-    const session = (await (client || supabase).auth.getSession()).data.session;
+    const supabaseClient = client || supabase;
+    const session = (await supabaseClient.auth.getSession()).data.session;
     const token = session?.access_token;
 
     if (!token) {
       return { success: false, message: 'Authentication required for reconciliation', healedCount: 0 };
     }
 
-    const res = await fetch('/api/admin/reconcile-integrity', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+    // Invoke Supabase Edge Function 'admin-reconcile'
+    const { data, error } = await supabaseClient.functions.invoke('admin-reconcile', {
+      body: { action: 'reconcile-integrity' }
     });
 
-    const data = await res.json();
-    if (!res.ok || !data.success) {
+    if (error || !data || !data.success) {
       return {
         success: false,
-        message: data.error || 'Server reconciliation failed',
+        message: error?.message || data?.error || 'Reconciliation failed via Edge Function',
         healedCount: 0
       };
     }
 
     return {
       success: true,
-      message: data.message || `Reconciled catalog relationships. ${data.healedCount} records corrected.`,
+      message: data.message || `Reconciled catalog relationships. ${data.healedCount || 0} records corrected.`,
       healedCount: data.healedCount || 0,
       details: data.details,
       auditBefore: data.auditBefore,

@@ -141,7 +141,7 @@ export const AdminIngestion: React.FC<AdminIngestionProps> = ({ navigate }) => {
       setAuditLoading(true);
       setAuditFeedback(null);
 
-      // 1. Direct Supabase Client Semantic Audit
+      // 1. Direct Client-Side Supabase Semantic Audit
       try {
         const audit = await runCatalogSemanticAudit(supabase);
         if (audit) {
@@ -151,22 +151,18 @@ export const AdminIngestion: React.FC<AdminIngestionProps> = ({ navigate }) => {
           return;
         }
       } catch (directErr) {
-        console.warn('Direct Supabase audit error, trying API endpoint fallback:', directErr);
+        console.warn('Direct Supabase audit error, trying Edge Function fallback:', directErr);
       }
 
-      // 2. Fallback to API route
-      const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const res = await fetch('/api/admin/semantic-audit', {
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
+      // 2. Fallback to Supabase Edge Function 'admin-reconcile'
+      const { data, error } = await supabase.functions.invoke('admin-reconcile', {
+        body: { action: 'semantic-audit' }
       });
-      const data = await res.json();
-      if (data.success) {
-        setAuditFeedback(`Audit complete: ${data.semanticQuality.semanticQualityScore}% semantic quality score. ${data.semanticQuality.semanticDiscrepanciesCount} anomalies found.`);
+      if (!error && data && data.success) {
+        setAuditFeedback(`Audit complete: ${data.semanticQuality?.semanticQualityScore || 100}% semantic quality score. ${data.semanticQuality?.semanticDiscrepanciesCount || 0} anomalies found.`);
         await loadData();
       } else {
-        setAuditFeedback(`Audit failed: ${data.error}`);
+        setAuditFeedback(`Audit failed: ${error?.message || data?.error || 'Unknown audit error'}`);
       }
     } catch (err: any) {
       setAuditFeedback(`Audit error: ${err.message}`);

@@ -519,49 +519,6 @@ class ContentService {
       }
     }
 
-    // 2. Try Backend Ingested Catalog API
-    try {
-      const params = new URLSearchParams();
-      if (filters.page) params.set('page', String(filters.page));
-      if (filters.per_page) params.set('per_page', String(filters.per_page));
-      if (filters.content_type && filters.content_type !== 'all') params.set('content_type', filters.content_type);
-      if (filters.industry && filters.industry !== 'all') params.set('industry', filters.industry);
-      if (filters.genre && filters.genre !== 'All' && filters.genre !== 'all') params.set('genre', filters.genre);
-      if (filters.query && filters.query.trim()) params.set('query', filters.query.trim());
-
-      const resp = await fetch(`/api/catalog?${params.toString()}`);
-      if (resp.ok) {
-        const catData = await resp.json();
-        if (catData && Array.isArray(catData.items) && catData.items.length > 0) {
-          const items: ContentItem[] = catData.items.map((i: any) => ({
-            id: i.id,
-            title: i.title,
-            original_title: i.original_title,
-            content_type: i.content_type,
-            overview: i.description,
-            poster_url: i.poster_url,
-            backdrop_url: i.backdrop_url,
-            release_date: i.release_date,
-            year: i.year,
-            rating_average: i.vote_average,
-            popularity: i.popularity,
-            primary_industry: i.industry_code,
-            genres: i.genres || [],
-            source: 'TMDB Ingestion Engine'
-          }));
-          return {
-            items,
-            hasNextPage: catData.hasNextPage,
-            totalCount: catData.total,
-            page: catData.page,
-            totalPages: Math.ceil(catData.total / perPage)
-          };
-        }
-      }
-    } catch {
-      // proceed to master dataset fallback
-    }
-
     // Default & Fallback: Comprehensive multi-format master catalog
     const masterDataset = getUnifiedMasterContent();
     const filtered = this.filterContentDataset(masterDataset, filters);
@@ -601,20 +558,39 @@ class ContentService {
       } catch (e) {
         console.warn('Supabase get_regional_catalog_counts rpc error:', e);
       }
+
+      // Fallback: Direct table aggregation
+      try {
+        const [ciRes, indRes, contentRes] = await Promise.all([
+          supabase.from('content_industries').select('content_id, industry_id'),
+          supabase.from('industries').select('id, name'),
+          supabase.from('content').select('id, content_type')
+        ]);
+
+        if (ciRes.data && indRes.data && contentRes.data) {
+          const typeMap = new Map<string, string>();
+          contentRes.data.forEach((c: any) => typeMap.set(c.id, c.content_type));
+
+          const counts: Record<string, { code: string; name: string; count: number; movieCount: number; tvCount: number }> = {};
+          indRes.data.forEach((ind: any) => {
+            const code = ind.name.toLowerCase().replace(/[^a-z0-9]/g, '_');
+            counts[ind.id] = { code, name: ind.name, count: 0, movieCount: 0, tvCount: 0 };
+          });
+
+          ciRes.data.forEach((r: any) => {
+            if (counts[r.industry_id]) {
+              counts[r.industry_id].count++;
+              const cType = typeMap.get(r.content_id);
+              if (cType === 'movie') counts[r.industry_id].movieCount++;
+              else if (cType === 'tv') counts[r.industry_id].tvCount++;
+            }
+          });
+
+          return Object.values(counts);
+        }
+      } catch (_) {}
     }
 
-    // 2. Try fetching from live regional counts API endpoint (Express fallback if active)
-    try {
-      const res = await fetch('/api/admin/regional-counts');
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && Array.isArray(json.data) && json.data.length > 0) {
-          return json.data;
-        }
-      }
-    } catch (_) {}
-
-    // 3. If database is unavailable, return empty list
     return [];
   }
 
@@ -713,25 +689,6 @@ class ContentService {
       }
     }
 
-    // 2. Fallback to API route (during Express transition)
-    try {
-      let headers: Record<string, string> = {};
-      if (supabase) {
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const token = sessionData?.session?.access_token;
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-          }
-        } catch (_) {}
-      }
-
-      const res = await fetch('/api/admin/ingestion-status', { headers });
-      if (res.ok) {
-        return await res.json();
-      }
-    } catch (_) {}
-
     return {
       configured: false,
       totalCatalogCount: 0,
@@ -757,7 +714,7 @@ class ContentService {
     category?: string;
     media_type?: 'movie' | 'tv';
   }): Promise<{ success: boolean; data?: any; error?: string }> {
-    // 1. Try Supabase Edge Function 'ingest-tmdb-content'
+    // Invoke Supabase Edge Function 'ingest-tmdb-content'
     if (isSupabaseConfigured() && supabase) {
       try {
         const { data: funcData, error: funcErr } = await supabase.functions.invoke('ingest-tmdb-content', {
@@ -767,50 +724,21 @@ class ContentService {
           return { success: true, data: funcData };
         }
         if (funcErr) {
-          console.warn('Supabase Edge Function invocation failed, trying Express fallback:', funcErr.message);
+          return { success: false, error: funcErr.message || 'Edge function ingestion error' };
         }
       } catch (funcErr: any) {
-        console.warn('Edge function invoke exception:', funcErr);
+        return { success: false, error: funcErr?.message || 'Edge function invocation failed' };
       }
     }
 
-    // 2. Fallback to server route '/api/admin/ingest-tmdb' (during transition)
-    try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-
-      if (supabase) {
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const token = sessionData?.session?.access_token;
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-          }
-        } catch (_) {}
-      }
-
-      const res = await fetch('/api/admin/ingest-tmdb', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(options || {})
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        return { success: false, error: json.error || `HTTP ${res.status}: Access denied` };
-      }
-      return { success: true, data: json };
-    } catch (e: any) {
-      return { success: false, error: e.message || 'Network error triggering ingestion' };
-    }
+    return { success: false, error: 'Supabase is not configured or offline' };
   }
 
   /**
    * Admin: Trigger Scheduled Nightly Ingestion Worker (Admin Only)
    */
   async triggerNightlyScheduler(): Promise<{ success: boolean; data?: any; error?: string }> {
-    // 1. Try Supabase Edge Function 'ingest-tmdb-content'
+    // Invoke Supabase Edge Function 'ingest-tmdb-content'
     if (isSupabaseConfigured() && supabase) {
       try {
         const { data: funcData, error: funcErr } = await supabase.functions.invoke('ingest-tmdb-content', {
@@ -819,40 +747,15 @@ class ContentService {
         if (!funcErr && funcData) {
           return { success: true, data: funcData };
         }
+        if (funcErr) {
+          return { success: false, error: funcErr.message || 'Edge function error' };
+        }
       } catch (funcErr: any) {
-        console.warn('Edge function invoke exception for nightly schedule:', funcErr);
+        return { success: false, error: funcErr?.message || 'Edge function invocation failed' };
       }
     }
 
-    // 2. Fallback to server route '/api/admin/trigger-nightly'
-    try {
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json'
-      };
-
-      if (supabase) {
-        try {
-          const { data: sessionData } = await supabase.auth.getSession();
-          const token = sessionData?.session?.access_token;
-          if (token) {
-            headers['Authorization'] = `Bearer ${token}`;
-          }
-        } catch (_) {}
-      }
-
-      const res = await fetch('/api/admin/trigger-nightly', {
-        method: 'POST',
-        headers
-      });
-
-      const json = await res.json();
-      if (!res.ok) {
-        return { success: false, error: json.error || `HTTP ${res.status}: Access denied` };
-      }
-      return { success: true, data: json };
-    } catch (e: any) {
-      return { success: false, error: e.message || 'Network error triggering scheduled ingestion' };
-    }
+    return { success: false, error: 'Supabase is not configured or offline' };
   }
 
   /**

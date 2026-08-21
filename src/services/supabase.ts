@@ -351,34 +351,6 @@ export const supabaseService = {
         }
       }
 
-      // Method 3: Fallback to server API route `/api/delete-account` (during transition)
-      if (!authDeleted && accessToken) {
-        try {
-          const res = await fetch('/api/delete-account', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${accessToken}`
-            }
-          });
-          if (res.ok) {
-            const apiRes = await res.json();
-            if (apiRes.success) {
-              authDeleted = true;
-            } else if (apiRes.error) {
-              deletionErrorMessage = apiRes.error;
-            }
-          } else {
-            const errData = await res.json().catch(() => null);
-            if (errData?.error) {
-              deletionErrorMessage = errData.error;
-            }
-          }
-        } catch (apiErr: any) {
-          console.warn('API /api/delete-account fallback error:', apiErr);
-        }
-      }
-
       // If server-side Auth deletion failed, do NOT claim success and do NOT wipe session
       if (!authDeleted) {
         const errText = deletionErrorMessage
