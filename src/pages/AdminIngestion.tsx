@@ -180,33 +180,12 @@ export const AdminIngestion: React.FC<AdminIngestionProps> = ({ navigate }) => {
       setReconcileLoading(true);
       setAuditFeedback(null);
 
-      // 1. Direct Supabase Client Reconciliation
-      try {
-        const res = await reconcileCatalogIntegrity(supabase);
-        if (res && res.success) {
-          setAuditFeedback(res.message);
-          await loadData();
-          setReconcileLoading(false);
-          return;
-        }
-      } catch (directErr) {
-        console.warn('Direct Supabase reconcile error, trying API endpoint fallback:', directErr);
-      }
-
-      // 2. Fallback to API route
-      const token = (await supabase.auth.getSession()).data.session?.access_token;
-      const res = await fetch('/api/admin/reconcile-integrity', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        }
-      });
-      const data = await res.json();
-      if (data.success) {
-        setAuditFeedback(data.message);
+      const res = await reconcileCatalogIntegrity(supabase);
+      if (res && res.success) {
+        setAuditFeedback(res.message);
         await loadData();
       } else {
-        setAuditFeedback(`Reconcile failed: ${data.error}`);
+        setAuditFeedback(`Reconcile failed: ${res?.message || 'Unknown error'}`);
       }
     } catch (err: any) {
       setAuditFeedback(`Reconcile error: ${err.message}`);

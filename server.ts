@@ -117,37 +117,55 @@ import {
   getIngestedCatalog,
   initIngestionScheduler,
   REGION_REGISTRY,
+  TMDB_GENRE_MAP,
   resolveDeterministicClassification
 } from './src/server/ingestionWorker';
 import { requireAdminAuth } from './src/server/adminAuth';
 
+// Helper to fetch all records across Supabase default 1000 row limits
+async function fetchAllRecords(client: any, table: string, selectColumns = '*') {
+  const records: any[] = [];
+  let page = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await client
+      .from(table)
+      .select(selectColumns)
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+    if (error) {
+      console.error(`Error in fetchAllRecords(${table}):`, error);
+      break;
+    }
+    if (data && data.length > 0) {
+      records.push(...data);
+    }
+    if (!data || data.length < pageSize) break;
+    page++;
+  }
+  return records;
+}
+
 // Helper for unified semantic & relational audit across all catalog items
 async function auditCatalogIntegrity(client: any) {
   const [
-    allContentRes,
-    allCiRes,
-    allClRes,
-    allCcRes,
-    allCgRes,
+    allContent,
+    allCi,
+    allCl,
+    allCc,
+    allCg,
     indListRes,
     langListRes,
     countryListRes
   ] = await Promise.all([
-    client.from('content').select('id, title, original_title, content_type, is_anime, external_source, external_id, metadata'),
-    client.from('content_industries').select('content_id, industry_id, is_primary'),
-    client.from('content_languages').select('content_id, language_id, is_primary'),
-    client.from('content_countries').select('content_id, country_id'),
-    client.from('content_genres').select('content_id, genre_id'),
+    fetchAllRecords(client, 'content', 'id, title, original_title, content_type, is_anime, external_source, external_id, metadata'),
+    fetchAllRecords(client, 'content_industries', 'content_id, industry_id, is_primary'),
+    fetchAllRecords(client, 'content_languages', 'content_id, language_id, is_primary'),
+    fetchAllRecords(client, 'content_countries', 'content_id, country_id'),
+    fetchAllRecords(client, 'content_genres', 'content_id, genre_id'),
     client.from('industries').select('id, name'),
     client.from('languages').select('id, name, iso_code'),
     client.from('countries').select('id, name, iso_code')
   ]);
-
-  const allContent = allContentRes.data || [];
-  const allCi = allCiRes.data || [];
-  const allCl = allClRes.data || [];
-  const allCc = allCcRes.data || [];
-  const allCg = allCgRes.data || [];
   const indList = indListRes.data || [];
   const langList = langListRes.data || [];
   const countryList = countryListRes.data || [];
@@ -520,14 +538,28 @@ app.post('/api/admin/reconcile-integrity', requireAdminAuth, async (req, res) =>
       return res.status(503).json({ success: false, error: 'Database credentials not configured' });
     }
 
-    const client = createClient(supabaseUrl, supabaseServiceKey);
+    const client = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: { persistSession: false, autoRefreshToken: false }
+    });
+
     const auditBefore = await auditCatalogIntegrity(client);
     let healedCount = 0;
+    let healedIndustriesCount = 0;
+    let healedLanguagesCount = 0;
+    let healedCountriesCount = 0;
+    let healedGenresCount = 0;
+    const errors: string[] = [];
 
-    const [indListRes, langListRes, countryListRes] = await Promise.all([
+    const [indListRes, langListRes, countryListRes, genreListRes, allContent, allCi, allCl, allCc, allCg] = await Promise.all([
       client.from('industries').select('id, name'),
       client.from('languages').select('id, name, iso_code'),
-      client.from('countries').select('id, name, iso_code')
+      client.from('countries').select('id, name, iso_code'),
+      client.from('genres').select('id, name'),
+      fetchAllRecords(client, 'content', 'id, title, original_title, content_type, is_anime, metadata'),
+      fetchAllRecords(client, 'content_industries', 'content_id, industry_id, is_primary'),
+      fetchAllRecords(client, 'content_languages', 'content_id, language_id, is_primary'),
+      fetchAllRecords(client, 'content_countries', 'content_id, country_id'),
+      fetchAllRecords(client, 'content_genres', 'content_id, genre_id')
     ]);
 
     const indMap = new Map<string, number>();
@@ -540,32 +572,65 @@ app.post('/api/admin/reconcile-integrity', requireAdminAuth, async (req, res) =>
     indMap.set('kollywood', indMap.get('kollywood') || 6);
     indMap.set('mollywood', indMap.get('mollywood') || 7);
     indMap.set('sandalwood', indMap.get('sandalwood') || 8);
-    indMap.set('korean_cinema', indMap.get('korean cinema & k-drama') || 9);
-    indMap.set('japanese_cinema', indMap.get('japanese cinema & j-drama') || 10);
-    indMap.set('anime_industry', indMap.get('anime industry') || 11);
+    indMap.set('korean_cinema', indMap.get('korean cinema & k-drama') || indMap.get('korean_cinema') || 9);
+    indMap.set('japanese_cinema', indMap.get('japanese cinema & j-drama') || indMap.get('japanese_cinema') || 10);
+    indMap.set('anime_industry', indMap.get('anime industry') || indMap.get('anime_industry') || 11);
 
     const langMap = new Map<string, number>();
     (langListRes.data || []).forEach((l: any) => {
-      if (l.iso_code) langMap.set(l.iso_code.toLowerCase(), l.id);
+      const iso = (l.iso_code || '').toLowerCase();
+      if (iso) langMap.set(iso, l.id);
       if (l.name) langMap.set(l.name.toLowerCase(), l.id);
     });
 
     const countryMap = new Map<string, number>();
     (countryListRes.data || []).forEach((c: any) => {
-      if (c.iso_code) countryMap.set(c.iso_code.toLowerCase(), c.id);
+      const iso = (c.iso_code || '').toLowerCase();
+      if (iso) countryMap.set(iso, c.id);
       if (c.name) countryMap.set(c.name.toLowerCase(), c.id);
     });
 
-    for (const anomaly of auditBefore.semanticQuality.anomalies) {
-      const { data: contentItem } = await client.from('content').select('*').eq('id', anomaly.id).single();
-      if (!contentItem) continue;
+    const genreMap = new Map<string, number>();
+    (genreListRes.data || []).forEach((g: any) => {
+      if (g.name) genreMap.set(g.name.toLowerCase(), g.id);
+    });
 
+    // Map existing junctions by content_id
+    const ciByContent = new Map<string, Set<number>>();
+    allCi.forEach((ci: any) => {
+      const set = ciByContent.get(ci.content_id) || new Set<number>();
+      set.add(ci.industry_id);
+      ciByContent.set(ci.content_id, set);
+    });
+
+    const clByContent = new Map<string, Set<number>>();
+    allCl.forEach((cl: any) => {
+      const set = clByContent.get(cl.content_id) || new Set<number>();
+      set.add(cl.language_id);
+      clByContent.set(cl.content_id, set);
+    });
+
+    const ccByContent = new Map<string, Set<number>>();
+    allCc.forEach((cc: any) => {
+      const set = ccByContent.get(cc.content_id) || new Set<number>();
+      set.add(cc.country_id);
+      ccByContent.set(cc.content_id, set);
+    });
+
+    const cgByContent = new Map<string, Set<number>>();
+    allCg.forEach((cg: any) => {
+      const set = cgByContent.get(cg.content_id) || new Set<number>();
+      set.add(cg.genre_id);
+      cgByContent.set(cg.content_id, set);
+    });
+
+    for (const contentItem of allContent) {
       const meta = contentItem.metadata || {};
       const expected = resolveDeterministicClassification(
         {
           original_language: meta.original_language,
           industry_code: meta.industry_code,
-          origin_country: meta.country_code,
+          origin_country: meta.country_code || meta.origin_country,
           genres: meta.genres,
           is_anime: contentItem.is_anime || meta.is_anime,
           title: contentItem.title,
@@ -574,13 +639,148 @@ app.post('/api/admin/reconcile-integrity', requireAdminAuth, async (req, res) =>
         { indMap, langMap, countryMap }
       );
 
+      let itemModified = false;
+
+      // 1. Reconcile Industry Junction (content_industries)
       if (expected.industryId) {
-        await client.from('content_industries').delete().eq('content_id', contentItem.id);
-        await client.from('content_industries').insert({
-          content_id: contentItem.id,
-          industry_id: expected.industryId,
-          is_primary: true
-        });
+        const existingInds = ciByContent.get(contentItem.id) || new Set<number>();
+        const needsIndustryUpdate = !existingInds.has(expected.industryId) || existingInds.size !== 1;
+
+        if (needsIndustryUpdate) {
+          const { error: delErr } = await client
+            .from('content_industries')
+            .delete()
+            .eq('content_id', contentItem.id);
+
+          if (!delErr) {
+            const { error: insErr } = await client
+              .from('content_industries')
+              .insert({
+                content_id: contentItem.id,
+                industry_id: expected.industryId,
+                is_primary: true
+              });
+
+            if (!insErr) {
+              healedIndustriesCount++;
+              itemModified = true;
+              ciByContent.set(contentItem.id, new Set([expected.industryId]));
+            } else {
+              errors.push(`Industry insert failed for ${contentItem.id}: ${insErr.message}`);
+            }
+          } else {
+            errors.push(`Industry delete failed for ${contentItem.id}: ${delErr.message}`);
+          }
+        }
+      }
+
+      // 2. Reconcile Language Junction (content_languages)
+      const targetLangId = expected.languageId || langMap.get((meta.original_language || '').toLowerCase()) || langMap.get('en');
+      if (targetLangId) {
+        const existingLangs = clByContent.get(contentItem.id) || new Set<number>();
+        const needsLangUpdate = !existingLangs.has(targetLangId) || existingLangs.size === 0;
+
+        if (needsLangUpdate) {
+          const { error: delErr } = await client
+            .from('content_languages')
+            .delete()
+            .eq('content_id', contentItem.id)
+            .neq('language_id', targetLangId);
+
+          if (!delErr) {
+            const { error: upsertErr } = await client
+              .from('content_languages')
+              .upsert({
+                content_id: contentItem.id,
+                language_id: targetLangId,
+                is_primary: true
+              }, { onConflict: 'content_id,language_id' });
+
+            if (!upsertErr) {
+              healedLanguagesCount++;
+              itemModified = true;
+              const set = clByContent.get(contentItem.id) || new Set<number>();
+              set.add(targetLangId);
+              clByContent.set(contentItem.id, set);
+            } else {
+              errors.push(`Language link failed for ${contentItem.id}: ${upsertErr.message}`);
+            }
+          }
+        }
+      }
+
+      // 3. Reconcile Country Junction (content_countries)
+      const targetCountryId = expected.countryId || countryMap.get(String(expected.countryCode || '').toLowerCase()) || countryMap.get('us');
+      if (targetCountryId) {
+        const existingCountries = ccByContent.get(contentItem.id) || new Set<number>();
+        const needsCountryUpdate = !existingCountries.has(targetCountryId) || existingCountries.size === 0;
+
+        if (needsCountryUpdate) {
+          const { error: delErr } = await client
+            .from('content_countries')
+            .delete()
+            .eq('content_id', contentItem.id)
+            .neq('country_id', targetCountryId);
+
+          if (!delErr) {
+            const { error: upsertErr } = await client
+              .from('content_countries')
+              .upsert({
+                content_id: contentItem.id,
+                country_id: targetCountryId
+              }, { onConflict: 'content_id,country_id' });
+
+            if (!upsertErr) {
+              healedCountriesCount++;
+              itemModified = true;
+              const set = ccByContent.get(contentItem.id) || new Set<number>();
+              set.add(targetCountryId);
+              ccByContent.set(contentItem.id, set);
+            } else {
+              errors.push(`Country link failed for ${contentItem.id}: ${upsertErr.message}`);
+            }
+          }
+        }
+      }
+
+      // 4. Reconcile Genres Junction (content_genres)
+      const rawGenres: any[] = Array.isArray(meta.genres) ? meta.genres : [];
+      if (rawGenres.length > 0) {
+        const existingGenres = cgByContent.get(contentItem.id) || new Set<number>();
+        const targetGenreIds: number[] = [];
+
+        for (const g of rawGenres) {
+          if (typeof g === 'number' && TMDB_GENRE_MAP[g]) {
+            for (const name of TMDB_GENRE_MAP[g]) {
+              const gid = genreMap.get(name.toLowerCase());
+              if (gid) targetGenreIds.push(gid);
+            }
+          } else if (typeof g === 'string') {
+            const gid = genreMap.get(g.toLowerCase());
+            if (gid) targetGenreIds.push(gid);
+          }
+        }
+
+        for (const gid of targetGenreIds) {
+          if (!existingGenres.has(gid)) {
+            const { error: cgErr } = await client
+              .from('content_genres')
+              .upsert({
+                content_id: contentItem.id,
+                genre_id: gid
+              }, { onConflict: 'content_id,genre_id' });
+
+            if (!cgErr) {
+              healedGenresCount++;
+              itemModified = true;
+              existingGenres.add(gid);
+              cgByContent.set(contentItem.id, existingGenres);
+            }
+          }
+        }
+      }
+
+      if (itemModified) {
         healedCount++;
       }
     }
@@ -589,14 +789,31 @@ app.post('/api/admin/reconcile-integrity', requireAdminAuth, async (req, res) =>
 
     return res.json({
       success: true,
-      message: `Reconciled catalog relationships. ${healedCount} records corrected.`,
+      message: `Reconciled catalog relationships. ${healedCount} records corrected across 4 junction tables.`,
       healedCount,
+      details: {
+        healedIndustriesCount,
+        healedLanguagesCount,
+        healedCountriesCount,
+        healedGenresCount,
+        errorsCount: errors.length
+      },
       auditBefore: {
         discrepancies: auditBefore.semanticQuality.semanticDiscrepanciesCount,
+        orphanedContent: auditBefore.relationalIntegrity.orphanedContent,
+        contentWithIndustry: auditBefore.relationalIntegrity.contentWithIndustry,
+        contentWithLanguage: auditBefore.relationalIntegrity.contentWithLanguage,
+        contentWithCountry: auditBefore.relationalIntegrity.contentWithCountry,
+        contentWithGenres: auditBefore.relationalIntegrity.contentWithGenres,
         score: auditBefore.semanticQuality.semanticQualityScore
       },
       auditAfter: {
         discrepancies: auditAfter.semanticQuality.semanticDiscrepanciesCount,
+        orphanedContent: auditAfter.relationalIntegrity.orphanedContent,
+        contentWithIndustry: auditAfter.relationalIntegrity.contentWithIndustry,
+        contentWithLanguage: auditAfter.relationalIntegrity.contentWithLanguage,
+        contentWithCountry: auditAfter.relationalIntegrity.contentWithCountry,
+        contentWithGenres: auditAfter.relationalIntegrity.contentWithGenres,
         score: auditAfter.semanticQuality.semanticQualityScore
       }
     });

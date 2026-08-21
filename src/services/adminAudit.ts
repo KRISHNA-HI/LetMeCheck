@@ -44,34 +44,51 @@ export interface AuditResult {
   };
 }
 
+async function fetchAllClientRecords(client: any, table: string, selectColumns = '*') {
+  const records: any[] = [];
+  let page = 0;
+  const pageSize = 1000;
+  while (true) {
+    const { data, error } = await client
+      .from(table)
+      .select(selectColumns)
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+    if (error) {
+      console.error(`Error in fetchAllClientRecords(${table}):`, error);
+      break;
+    }
+    if (data && data.length > 0) {
+      records.push(...data);
+    }
+    if (!data || data.length < pageSize) break;
+    page++;
+  }
+  return records;
+}
+
 export async function runCatalogSemanticAudit(client = supabase): Promise<AuditResult | null> {
   if (!client || !isSupabaseConfigured()) return null;
 
   const [
-    allContentRes,
-    allCiRes,
-    allClRes,
-    allCcRes,
-    allCgRes,
+    allContent,
+    allCi,
+    allCl,
+    allCc,
+    allCg,
     indListRes,
     langListRes,
     countryListRes
   ] = await Promise.all([
-    client.from('content').select('id, title, original_title, content_type, is_anime, external_source, external_id, metadata'),
-    client.from('content_industries').select('content_id, industry_id, is_primary'),
-    client.from('content_languages').select('content_id, language_id, is_primary'),
-    client.from('content_countries').select('content_id, country_id'),
-    client.from('content_genres').select('content_id, genre_id'),
+    fetchAllClientRecords(client, 'content', 'id, title, original_title, content_type, is_anime, external_source, external_id, metadata'),
+    fetchAllClientRecords(client, 'content_industries', 'content_id, industry_id, is_primary'),
+    fetchAllClientRecords(client, 'content_languages', 'content_id, language_id, is_primary'),
+    fetchAllClientRecords(client, 'content_countries', 'content_id, country_id'),
+    fetchAllClientRecords(client, 'content_genres', 'content_id, genre_id'),
     client.from('industries').select('id, name'),
     client.from('languages').select('id, name, iso_code'),
     client.from('countries').select('id, name, iso_code')
   ]);
 
-  const allContent = allContentRes.data || [];
-  const allCi = allCiRes.data || [];
-  const allCl = allClRes.data || [];
-  const allCc = allCcRes.data || [];
-  const allCg = allCgRes.data || [];
   const indList = indListRes.data || [];
   const langList = langListRes.data || [];
   const countryList = countryListRes.data || [];
@@ -277,94 +294,48 @@ export async function reconcileCatalogIntegrity(client = supabase): Promise<{
   success: boolean;
   message: string;
   healedCount: number;
-  auditBefore?: { discrepancies: number; score: number };
-  auditAfter?: { discrepancies: number; score: number };
+  details?: any;
+  auditBefore?: any;
+  auditAfter?: any;
 }> {
-  if (!client || !isSupabaseConfigured()) {
-    return { success: false, message: 'Supabase client unavailable', healedCount: 0 };
-  }
+  try {
+    const session = (await (client || supabase).auth.getSession()).data.session;
+    const token = session?.access_token;
 
-  const auditBefore = await runCatalogSemanticAudit(client);
-  if (!auditBefore) {
-    return { success: false, message: 'Failed to run pre-reconcile audit', healedCount: 0 };
-  }
-
-  let healedCount = 0;
-
-  const [indListRes, langListRes, countryListRes] = await Promise.all([
-    client.from('industries').select('id, name'),
-    client.from('languages').select('id, name, iso_code'),
-    client.from('countries').select('id, name, iso_code')
-  ]);
-
-  const indMap = new Map<string, number>();
-  (indListRes.data || []).forEach((i: any) => {
-    if (i.name) indMap.set(i.name.toLowerCase(), i.id);
-  });
-  indMap.set('hollywood', indMap.get('hollywood') || 3);
-  indMap.set('bollywood', indMap.get('bollywood') || 4);
-  indMap.set('tollywood', indMap.get('tollywood') || 5);
-  indMap.set('kollywood', indMap.get('kollywood') || 6);
-  indMap.set('mollywood', indMap.get('mollywood') || 7);
-  indMap.set('sandalwood', indMap.get('sandalwood') || 8);
-  indMap.set('korean_cinema', indMap.get('korean cinema & k-drama') || 9);
-  indMap.set('japanese_cinema', indMap.get('japanese cinema & j-drama') || 10);
-  indMap.set('anime_industry', indMap.get('anime industry') || 11);
-
-  const langMap = new Map<string, number>();
-  (langListRes.data || []).forEach((l: any) => {
-    if (l.iso_code) langMap.set(l.iso_code.toLowerCase(), l.id);
-    if (l.name) langMap.set(l.name.toLowerCase(), l.id);
-  });
-
-  const countryMap = new Map<string, number>();
-  (countryListRes.data || []).forEach((c: any) => {
-    if (c.iso_code) countryMap.set(c.iso_code.toLowerCase(), c.id);
-    if (c.name) countryMap.set(c.name.toLowerCase(), c.id);
-  });
-
-  for (const anomaly of auditBefore.semanticQuality.anomalies) {
-    const { data: contentItem } = await client.from('content').select('*').eq('id', anomaly.id).single();
-    if (!contentItem) continue;
-
-    const meta = contentItem.metadata || {};
-    const expected = resolveDeterministicClassification(
-      {
-        original_language: meta.original_language,
-        industry_code: meta.industry_code,
-        origin_country: meta.country_code,
-        genres: meta.genres,
-        is_anime: contentItem.is_anime || meta.is_anime,
-        title: contentItem.title,
-        original_title: contentItem.original_title
-      },
-      { indMap, langMap, countryMap }
-    );
-
-    if (expected.industryId) {
-      await client.from('content_industries').delete().eq('content_id', contentItem.id);
-      await client.from('content_industries').insert({
-        content_id: contentItem.id,
-        industry_id: expected.industryId,
-        is_primary: true
-      });
-      healedCount++;
+    if (!token) {
+      return { success: false, message: 'Authentication required for reconciliation', healedCount: 0 };
     }
-  }
 
-  const auditAfter = await runCatalogSemanticAudit(client);
+    const res = await fetch('/api/admin/reconcile-integrity', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
 
-  return {
-    success: true,
-    message: `Reconciled catalog relationships. ${healedCount} records corrected.`,
-    healedCount,
-    auditBefore: {
-      discrepancies: auditBefore.semanticQuality.semanticDiscrepanciesCount,
-      score: auditBefore.semanticQuality.semanticQualityScore
-    },
-    auditAfter: {
-      discrepancies: auditAfter?.semanticQuality.semanticDiscrepanciesCount || 0,
-      score: auditAfter?.semanticQuality.semanticQualityScore || 0
+    const data = await res.json();
+    if (!res.ok || !data.success) {
+      return {
+        success: false,
+        message: data.error || 'Server reconciliation failed',
+        healedCount: 0
+      };
     }
-  };
+
+    return {
+      success: true,
+      message: data.message || `Reconciled catalog relationships. ${data.healedCount} records corrected.`,
+      healedCount: data.healedCount || 0,
+      details: data.details,
+      auditBefore: data.auditBefore,
+      auditAfter: data.auditAfter
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: err.message || 'Network error during reconciliation',
+      healedCount: 0
+    };
+  }
 }
