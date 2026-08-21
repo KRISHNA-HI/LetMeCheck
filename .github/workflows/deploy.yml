@@ -31,10 +31,11 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Verify Supabase build environment variables
+      - name: Verify build environment variables
         env:
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL || vars.VITE_SUPABASE_URL || secrets.SUPABASE_URL || vars.SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || vars.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY || secrets.SUPABASE_PUBLISHABLE_KEY || vars.SUPABASE_PUBLISHABLE_KEY }}
+          VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY || vars.VITE_TMDB_API_KEY || secrets.TMDB_API_KEY || vars.TMDB_API_KEY }}
         run: |
           MISSING_VARS=0
           
@@ -52,6 +53,12 @@ jobs:
             echo "✓ VITE_SUPABASE_PUBLISHABLE_KEY is configured (length: ${#VITE_SUPABASE_PUBLISHABLE_KEY} chars)"
           fi
 
+          if [ -z "$VITE_TMDB_API_KEY" ]; then
+            echo "::warning::VITE_TMDB_API_KEY (or TMDB_API_KEY) is not set in GitHub repository Secrets/Variables. Live TMDB Trending and New Releases will show an unavailable notice in the browser until configured."
+          else
+            echo "✓ VITE_TMDB_API_KEY is configured (length: ${#VITE_TMDB_API_KEY} chars)"
+          fi
+
           if [ $MISSING_VARS -ne 0 ]; then
             echo ""
             echo "=========================================================================="
@@ -63,6 +70,7 @@ jobs:
             echo "  2. Add Repository Secret or Variable:"
             echo "     - Name: VITE_SUPABASE_URL"
             echo "     - Name: VITE_SUPABASE_PUBLISHABLE_KEY (or VITE_SUPABASE_ANON_KEY)"
+            echo "     - Name: VITE_TMDB_API_KEY (or TMDB_API_KEY)"
             echo "=========================================================================="
             exit 1
           fi
@@ -73,7 +81,7 @@ jobs:
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY || vars.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY || secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY || secrets.SUPABASE_PUBLISHABLE_KEY || vars.SUPABASE_PUBLISHABLE_KEY }}
           VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY || vars.VITE_SUPABASE_ANON_KEY || secrets.VITE_SUPABASE_PUBLISHABLE_KEY || vars.VITE_SUPABASE_PUBLISHABLE_KEY || secrets.SUPABASE_ANON_KEY || vars.SUPABASE_ANON_KEY }}
           VITE_TMDB_API_KEY: ${{ secrets.VITE_TMDB_API_KEY || vars.VITE_TMDB_API_KEY || secrets.TMDB_API_KEY || vars.TMDB_API_KEY }}
-        run: npm run build
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY || vars.TMDB_API_KEY || secrets.VITE_TMDB_API_KEY || vars.VITE_TMDB_API_KEY }}
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

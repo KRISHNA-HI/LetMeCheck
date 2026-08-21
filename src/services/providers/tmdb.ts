@@ -26,10 +26,24 @@ export class TmdbProvider implements ContentProvider {
   constructor(apiKey?: string) {
     let envKey: string | null = null;
     try {
-      if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
-        envKey = (import.meta as any).env.VITE_TMDB_API_KEY || (import.meta as any).env.TMDB_API_KEY || null;
+      // Direct property access is required for Vite static AST replacement at build time:
+      const viteKey = import.meta.env.VITE_TMDB_API_KEY;
+      if (viteKey && typeof viteKey === 'string' && viteKey.trim().length > 0) {
+        envKey = viteKey.trim();
       }
     } catch (_) {}
+
+    if (!envKey) {
+      try {
+        if (typeof import.meta !== 'undefined' && (import.meta as any).env) {
+          const fallbackKey = (import.meta as any).env.TMDB_API_KEY;
+          if (fallbackKey && typeof fallbackKey === 'string' && fallbackKey.trim().length > 0) {
+            envKey = fallbackKey.trim();
+          }
+        }
+      } catch (_) {}
+    }
+
     if (!envKey && typeof process !== 'undefined' && process.env) {
       envKey = process.env.VITE_TMDB_API_KEY || process.env.TMDB_API_KEY || null;
     }
