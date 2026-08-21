@@ -322,7 +322,7 @@ Deno.serve(async (req: Request) => {
             const ratingCount = item.vote_count || 0;
             const popularity = typeof item.popularity === 'number' ? Math.round(item.popularity * 100) / 100 : 0.0;
 
-            const standardContentType = mediaType === 'movie' ? 'movie' : 'series';
+            const standardContentType = mediaType === 'movie' ? 'movie' : 'tv_series';
 
             // Check if content row already exists by (external_source, external_id)
             const { data: existingRow } = await adminClient
